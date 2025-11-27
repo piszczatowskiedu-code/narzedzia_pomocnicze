@@ -12,7 +12,7 @@ from datetime import datetime
 
 st.set_page_config(
     page_title="Pobieranie okładek z Excel",
-    page_icon="📥",
+    page_icon="",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -29,6 +29,11 @@ st.markdown("""
         color: #1f77b4;
         text-align: center;
         margin-bottom: 1rem;
+    }
+    /* Ciemniejszy placeholder w text area */
+    textarea::placeholder {
+        color: #e0e0e0 !important;
+        opacity: 0.4 !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -64,56 +69,82 @@ def pobierz_obraz(url, timeout=TIMEOUT):
     response.raise_for_status()
     return response.content
 
-def create_zip(folder_path):
-    """Tworzy archiwum ZIP z pobranych plików"""
+def create_zip_from_memory(files_dict):
+    """Tworzy archiwum ZIP z plików w pamięci"""
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
-        for root, dirs, files in os.walk(folder_path):
-            for file in files:
-                file_path = os.path.join(root, file)
-                arcname = os.path.relpath(file_path, folder_path)
-                zip_file.write(file_path, arcname)
+        for filename, file_data in files_dict.items():
+            zip_file.writestr(filename, file_data)
     zip_buffer.seek(0)
     return zip_buffer
 
+def parse_ean_list(ean_text):
+    """Parsuje listę kodów EAN z tekstu"""
+    if not ean_text:
+        return set()
+    
+    ean_list = []
+    for line in ean_text.strip().split('\n'):
+        ean = line.strip()
+        if ean:
+            # Próba konwersji EAN jak w głównym kodzie
+            try:
+                ean = str(int(float(ean))).strip()
+            except (ValueError, OverflowError):
+                ean = str(ean).strip()
+            ean_list.append(ean)
+    
+    return set(ean_list)
+
+# Inicjalizacja session_state
+if 'download_results' not in st.session_state:
+    st.session_state.download_results = None
+
 # Nagłówek
-st.markdown("<div class='main-header'>📥 Pobieranie okładek z Excel</div>", unsafe_allow_html=True)
+st.markdown("<div class='main-header'>Pobieranie okładek z Excel</div>", unsafe_allow_html=True)
 st.markdown("---")
 
 # Sidebar
 with st.sidebar:
-    st.header("⚙️ Ustawienia")
+    st.header("Ustawienia")
     
     # Sekcja konwersji
     convert_webp = st.checkbox(
-        "🔄 Konwertuj .webp na .png",
+        "Konwertuj .webp na .png",
         value=True,
         help="Automatycznie konwertuje obrazy WebP do formatu PNG"
     )
     
     # Sekcja plików
     overwrite = st.checkbox(
-        "📁 Nadpisuj istniejące pliki",
+        "Nadpisuj istniejące pliki",
         value=False,
         help="Pobierz ponownie pliki, które już istnieją"
     )
     
     st.markdown("---")
-    st.markdown("### 📖 Instrukcja")
+    st.markdown("### Instrukcja")
     st.markdown("""
-    1. 📤 Wgraj plik Excel
-    2. 🎯 Wybierz kolumny z danymi
-    3. 🚀 Kliknij 'Pobierz okładki'
-    4. ⬇️ Pobierz archiwum ZIP
+    1. Wgraj plik Excel
+    2. Wybierz kolumny z danymi
+    3. Opcjonalnie: wklej listę EAN do pobrania
+    4. Kliknij 'Pobierz okładki'
+    5. Pobierz archiwum ZIP
     """)
     
     st.markdown("---")
-    st.markdown("### ℹ️ Informacje")
-    st.info("Aplikacja automatycznie pomija puste wiersze i nieprawidłowe linki.")
+    st.markdown("### Informacje")
+    st.info("Aplikacja automatycznie pomija puste wiersze, pliki PDF i nieprawidłowe linki.")
+    
+    if st.session_state.download_results:
+        st.markdown("---")
+        if st.button("Wyczyść raport", type="secondary"):
+            st.session_state.download_results = None
+            st.rerun()
 
 # Główna część aplikacji
 uploaded_file = st.file_uploader(
-    "📤 Wybierz plik Excel",
+    "Wybierz plik Excel",
     type=['xlsx', 'xls'],
     help="Obsługiwane formaty: .xlsx, .xls"
 )
@@ -124,74 +155,116 @@ if uploaded_file is not None:
         with st.spinner("Wczytywanie pliku..."):
             df = pd.read_excel(uploaded_file)
         
-        st.success(f"✅ Wczytano: **{uploaded_file.name}** | Wierszy: **{len(df)}** | Kolumn: **{len(df.columns)}**")
+        st.success(f"Wczytano: **{uploaded_file.name}** | Wierszy: **{len(df)}** | Kolumn: **{len(df.columns)}**")
         
         # Konfiguracja - wybór kolumn
-        st.markdown("### 🎯 Wybór kolumn")
+        st.markdown("### Wybór kolumn")
         
         col1, col2 = st.columns(2)
         
         with col1:
             ean_column = st.selectbox(
-                "📌 Kolumna z kodami EAN",
+                "Kolumna z kodami EAN",
                 options=df.columns.tolist(),
                 index=df.columns.tolist().index('EAN') if 'EAN' in df.columns else 0,
                 help="Wybierz kolumnę zawierającą unikalne kody EAN"
             )
             
-            # Preview EAN
-            st.markdown("**Przykładowe wartości:**")
-            sample_ean = df[ean_column].dropna().head(3).tolist()
-            for ean in sample_ean:
-                st.code(str(ean), language=None)
+            # Preview EAN - tylko 1 wartość
+            st.markdown("**Przykładowa wartość:**")
+            sample_ean = df[ean_column].dropna().head(1).tolist()
+            if sample_ean:
+                ean_value = sample_ean[0]
+                # Konwersja EAN bez .0
+                try:
+                    ean_value = str(int(float(ean_value)))
+                except (ValueError, OverflowError):
+                    ean_value = str(ean_value)
+                st.code(ean_value, language=None)
         
         with col2:
             link_column = st.selectbox(
-                "🔗 Kolumna z linkami do okładek",
+                "Kolumna z linkami do okładek",
                 options=df.columns.tolist(),
                 index=df.columns.tolist().index('Link do okładki') if 'Link do okładki' in df.columns else 0,
                 help="Wybierz kolumnę zawierającą URL do obrazów"
             )
             
-            # Preview links
-            st.markdown("**Przykładowe wartości:**")
-            sample_links = df[link_column].dropna().head(3).tolist()
-            for link in sample_links:
-                st.code(str(link)[:50] + "...", language=None)
+            # Preview links - tylko 1 wartość
+            st.markdown("**Przykładowa wartość:**")
+            sample_links = df[link_column].dropna().head(1).tolist()
+            if sample_links:
+                st.code(str(sample_links[0])[:70] + "...", language=None)
+        
+        # Sekcja filtrowania EAN
+        st.markdown("---")
+        st.markdown("### Filtrowanie po kodach EAN (opcjonalne)")
+        
+        col1, col2 = st.columns([3, 1])
+        
+        with col1:
+            ean_filter_text = st.text_area(
+                "Wklej kody EAN do pobrania (jeden kod na linię)",
+                height=150,
+                placeholder="5901234567890\n5907654321098\n9788374959216",
+                help="Jeśli wpiszesz kody EAN, tylko te produkty zostaną pobrane. Zostaw puste aby pobrać wszystkie."
+            )
+        
+        with col2:
+            if ean_filter_text:
+                ean_filter_set = parse_ean_list(ean_filter_text)
+                st.info(f"Wprowadzono kodów: **{len(ean_filter_set)}**")
+                
+                # Sprawdź ile z nich istnieje w pliku
+                df_eans = df[ean_column].dropna().apply(lambda x: str(int(float(x))) if pd.notna(x) else '')
+                matching = sum(1 for ean in df_eans if ean in ean_filter_set)
+                st.success(f"Znaleziono w pliku: **{matching}**")
+                
+                if matching == 0:
+                    st.warning("Żaden z podanych kodów nie został znaleziony!")
+            else:
+                st.info("Filtr nieaktywny\n\nPobrane zostaną wszystkie produkty")
         
         # Przycisk pobierania
         st.markdown("---")
-        st.markdown("### 🚀 Rozpocznij pobieranie")
+        st.markdown("### Rozpocznij pobieranie")
         
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
             start_download = st.button(
-                "📥 POBIERZ OKŁADKI",
+                "POBIERZ OKŁADKI",
                 type="primary",
                 use_container_width=True
             )
         
         if start_download:
-            # Utworzenie folderu
-            output_folder = f"okladki_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-            os.makedirs(output_folder, exist_ok=True)
+            # Słownik na pliki w pamięci
+            downloaded_files = {}
+            
+            # Przygotuj zestaw EAN do filtrowania
+            ean_filter_set = parse_ean_list(ean_filter_text) if ean_filter_text else None
+            found_eans = set()  # Zbiór znalezionych EAN
             
             # Statystyki
             stats = {
                 'sukces': 0,
                 'blad': 0,
-                'pominięto': 0,
-                'konwersje': 0
+                'istnieje': 0,  
+                'konwersje': 0,
+                'nieznalezione_ean': 0,
+                'pdf_pominięte': 0,
+                'puste_wiersze': 0
             }
             
             errors_log = []
+            pdf_eans = []  # Lista EAN z linkami PDF
             
             # Progress
             progress_bar = st.progress(0)
             status_text = st.empty()
             
             # Logi - tylko błędy
-            log_expander = st.expander("⚠️ Błędy i ostrzeżenia", expanded=False)
+            log_expander = st.expander("Błędy i ostrzeżenia", expanded=False)
             log_container = log_expander.container()
             
             total_rows = len(df)
@@ -199,25 +272,49 @@ if uploaded_file is not None:
             for idx, row in df.iterrows():
                 progress = (idx + 1) / total_rows
                 progress_bar.progress(progress)
-                status_text.text(f"⏳ Przetwarzanie: {idx + 1}/{total_rows} ({progress*100:.1f}%)")
+                status_text.text(f"Przetwarzanie: {idx + 1}/{total_rows} ({progress*100:.1f}%)")
                 
                 link = row[link_column]
                 ean = row[ean_column]
                 
                 if pd.isna(link) or pd.isna(ean):
-                    with log_container:
-                        st.warning(f"⚠️ Wiersz {idx + 2}: Brak danych")
-                    stats['pominięto'] += 1
-                    continue
+                    # NIE zwiększamy 'pominięto', tylko osobny licznik
+                    stats['puste_wiersze'] += 1
+                    continue  # Pomijamy bez logowania
                 
                 try:
                     ean = str(int(float(ean))).strip().replace(' ', '')
                 except (ValueError, OverflowError):
                     ean = str(ean).strip().replace(' ', '')
                 
+                # Sprawdź czy EAN jest na liście filtrów (jeśli filtr jest aktywny)
+                if ean_filter_set:
+                    if ean not in ean_filter_set:
+                        stats['nieznalezione_ean'] += 1
+                        continue
+                    else:
+                        found_eans.add(ean)  # Dodaj do znalezionych
+                
+                # Sprawdź czy link prowadzi do pliku PDF
+                link_lower = str(link).lower()
+                if '.pdf' in link_lower:
+                    with log_container:
+                        st.warning(f"EAN {ean}: Pominięto - link prowadzi do pliku PDF")
+                    stats['pdf_pominięte'] += 1
+                    pdf_eans.append(ean)
+                    continue
+                
                 try:
                     parsed_url = urlparse(str(link))
                     extension = os.path.splitext(parsed_url.path)[1].lower()
+                    
+                    # Dodatkowe sprawdzenie na PDF w rozszerzeniu
+                    if extension == '.pdf':
+                        with log_container:
+                            st.warning(f"EAN {ean}: Pominięto - link prowadzi do pliku PDF")
+                        stats['pdf_pominięte'] += 1
+                        pdf_eans.append(ean)
+                        continue
                     
                     if not extension or extension not in ALLOWED_FORMATS:
                         extension = DEFAULT_FORMAT
@@ -227,10 +324,10 @@ if uploaded_file is not None:
                         extension = '.png'
                     
                     filename = f"{ean}{extension}"
-                    filepath = os.path.join(output_folder, filename)
                     
-                    if os.path.exists(filepath) and not overwrite:
-                        stats['pominięto'] += 1
+                    # Sprawdzenie czy plik już istnieje (w pamięci)
+                    if filename in downloaded_files and not overwrite:
+                        stats['istnieje'] += 1  
                         continue
                     
                     image_data = pobierz_obraz(link)
@@ -239,8 +336,8 @@ if uploaded_file is not None:
                         image_data = convert_webp_to_png(image_data)
                         stats['konwersje'] += 1
                     
-                    with open(filepath, 'wb') as f:
-                        f.write(image_data)
+                    # Zapisz w pamięci zamiast na dysku
+                    downloaded_files[filename] = image_data
                     
                     stats['sukces'] += 1
                     time.sleep(DELAY_BETWEEN_DOWNLOADS)
@@ -249,40 +346,107 @@ if uploaded_file is not None:
                     error_msg = f"EAN: {ean} | Błąd: {str(e)}"
                     errors_log.append(error_msg)
                     with log_container:
-                        st.error(f"❌ {error_msg}")
+                        st.error(error_msg)
                     stats['blad'] += 1
             
             # Zakończenie
             progress_bar.progress(1.0)
-            status_text.text("✅ Pobieranie zakończone!")
+            status_text.text("Pobieranie zakończone!")
+            
+            # Zapisz wyniki w session_state
+            missing_eans = None
+            if ean_filter_set:
+                missing_eans = ean_filter_set - found_eans
+            
+            st.session_state.download_results = {
+                'stats': stats,
+                'errors_log': errors_log,
+                'pdf_eans': pdf_eans,
+                'downloaded_files': downloaded_files,
+                'missing_eans': missing_eans,
+                'ean_filter_set': ean_filter_set
+            }
+        
+        # Wyświetl wyniki (jeśli istnieją w session_state)
+        if st.session_state.download_results:
+            results = st.session_state.download_results
+            stats = results['stats']
+            errors_log = results['errors_log']
+            pdf_eans = results['pdf_eans']
+            downloaded_files = results['downloaded_files']
+            missing_eans = results['missing_eans']
+            ean_filter_set = results['ean_filter_set']
             
             # Finalne podsumowanie
             st.markdown("---")
-            st.markdown("## 📊 Raport końcowy")
+            st.markdown("## Raport końcowy")
             
-            col1, col2, col3, col4 = st.columns(4)
-            col1.metric("✅ Pobrane", stats['sukces'], delta=None)
-            col2.metric("❌ Błędy", stats['blad'], delta=None)
-            col3.metric("⏭️ Pominięte", stats['pominięto'], delta=None)
-            col4.metric("🔄 Konwersje WebP", stats['konwersje'], delta=None)
+            # Wyświetlamy tylko niezerowe statystyki
+            cols_data = []
+            if stats['sukces'] > 0:
+                cols_data.append(("Pobrane", stats['sukces']))
+            if stats['blad'] > 0:
+                cols_data.append(("Błędy", stats['blad']))
+            if stats['istnieje'] > 0:
+                cols_data.append(("Już istnieje", stats['istnieje']))
+            if stats['konwersje'] > 0:
+                cols_data.append(("Konwersje WebP", stats['konwersje']))
+            if ean_filter_set and stats['nieznalezione_ean'] > 0:
+                cols_data.append(("Poza filtrem", stats['nieznalezione_ean']))
+            if stats['pdf_pominięte'] > 0:
+                cols_data.append(("Pliki PDF", stats['pdf_pominięte']))
+            if stats['puste_wiersze'] > 0:
+                cols_data.append(("Puste wiersze", stats['puste_wiersze']))
+            
+            if cols_data:
+                cols = st.columns(len(cols_data))
+                for i, (label, value) in enumerate(cols_data):
+                    cols[i].metric(label, value)
             
             # Błędy
             if errors_log:
-                with st.expander(f"❌ Lista błędów ({len(errors_log)})"):
+                with st.expander(f"Lista błędów ({len(errors_log)})"):
                     for error in errors_log:
                         st.text(error)
             
+            # Lista pominiętych PDF
+            if pdf_eans:
+                with st.expander(f"Pominięte pliki PDF ({len(pdf_eans)})"):
+                    st.info("Następujące produkty mają linki do plików PDF zamiast obrazów:")
+                    pdf_text = '\n'.join(pdf_eans)
+                    st.text_area(
+                        "Lista kodów EAN z linkami PDF:",
+                        value=pdf_text,
+                        height=150,
+                        help="Te produkty wymagają ręcznego pozyskania obrazów okładek"
+                    )
+            
+            # Raport brakujących EAN
+            if missing_eans:
+                st.markdown("---")
+                st.markdown("### Kody EAN nieznalezione w pliku Excel")
+                st.warning(f"Następujące kody EAN nie zostały znalezione w pliku i wymagają ręcznego uzupełnienia ({len(missing_eans)} kodów):")
+                
+                # Lista brakujących kodów do skopiowania
+                missing_eans_text = '\n'.join(sorted(list(missing_eans)))
+                st.text_area(
+                    "Lista brakujących kodów EAN:",
+                    value=missing_eans_text,
+                    height=200,
+                    help="Możesz skopiować tę listę i przekazać do uzupełnienia"
+                )
+            
             # Download ZIP
             if stats['sukces'] > 0:
-                st.markdown("### 📦 Pobierz archiwum")
+                st.markdown("### Pobierz archiwum")
                 
-                with st.spinner("📦 Tworzenie archiwum ZIP..."):
-                    zip_buffer = create_zip(output_folder)
+                with st.spinner("Tworzenie archiwum ZIP..."):
+                    zip_buffer = create_zip_from_memory(downloaded_files)
                 
                 zip_filename = f"okladki_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
                 
                 st.download_button(
-                    label=f"⬇️ Pobierz {stats['sukces']} plików (ZIP)",
+                    label=f"Pobierz {stats['sukces']} plików (ZIP)",
                     data=zip_buffer,
                     file_name=zip_filename,
                     mime="application/zip",
@@ -290,15 +454,14 @@ if uploaded_file is not None:
                 )
                 
                 # Lista plików
-                with st.expander(f"📋 Lista pobranych plików ({stats['sukces']})"):
-                    files = sorted(os.listdir(output_folder))
-                    for i, file in enumerate(files, 1):
-                        st.text(f"{i}. {file}")
+                with st.expander(f"Lista pobranych plików ({stats['sukces']})"):
+                    for i, filename in enumerate(sorted(downloaded_files.keys()), 1):
+                        st.text(f"{i}. {filename}")
             else:
-                st.warning("⚠️ Nie pobrano żadnych plików")
+                st.warning("Nie pobrano żadnych plików")
     
     except Exception as e:
-        st.error(f"❌ Błąd: {str(e)}")
+        st.error(f"Błąd: {str(e)}")
         st.exception(e)
 
 else:
@@ -306,10 +469,10 @@ else:
     col1, col2, col3 = st.columns([1, 2, 1])
     
     with col2:
-        st.info("👆 Wgraj plik Excel, aby rozpocząć")
+        st.info("Wgraj plik Excel, aby rozpocząć")
 
 st.markdown("---")
 st.markdown(
-    "<div style='text-align: center; color: #888;'>Made with ❤️ using Streamlit</div>",
+    "<div style='text-align: center; color: #888;'>Made with Streamlit</div>",
     unsafe_allow_html=True
 )
