@@ -80,7 +80,7 @@ with col2:
     if st.button("🚀 Otwórz konwerter HTML", key="btn_html", type="primary"):
         st.switch_page("pages/2_zmiana_opisu_html.py")
 
-# Drugi rząd - 2 kolumny
+# Drugi rząd - tylko 1 kolumna (trzecie narzędzie)
 st.markdown("---")
 col3, col4 = st.columns(2)
 
@@ -100,22 +100,6 @@ with col3:
     
     if st.button("🚀 Otwórz konwerter obrazów", key="btn_webp", type="primary"):
         st.switch_page("pages/3_konwerter_webp.py")
-
-with col4:
-    st.markdown("""
-    <div class='tool-card' style='background-color: #f8f9fa;'>
-    <h3>🔜 Więcej wkrótce</h3>
-    <p>Pracujemy nad kolejnymi narzędziami do usprawnienia Twojej pracy.</p>
-    <ul>
-        <li>💡 Masz pomysł na nowe narzędzie?</li>
-        <li>📧 Zgłoś swoją propozycję</li>
-        <li>🚀 Regularnie dodajemy nowe funkcje</li>
-        <li>⭐ Śledź aktualizacje</li>
-    </ul>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    st.info("Nowe narzędzia pojawią się tutaj")
 
 # Informacje dodatkowe
 st.markdown("---")
