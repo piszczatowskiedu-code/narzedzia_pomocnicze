@@ -26,12 +26,10 @@ st.markdown("""
         border: 2px solid #f0f2f6;
         margin-bottom: 1rem;
         transition: all 0.3s ease;
-        background: white;
     }
     .tool-card:hover {
         border-color: #1f77b4;
         box-shadow: 0 5px 15px rgba(0,0,0,0.1);
-        transform: translateY(-2px);
     }
     .stButton > button {
         width: 100%;
@@ -55,40 +53,38 @@ Wybierz narzędzie poniżej lub z menu bocznego, aby rozpocząć.
 col1, col2 = st.columns(2)
 
 with col1:
-    with st.container():
-        st.markdown("""
-        <div class='tool-card'>
-        <h3>📥 Pobieranie Okładek</h3>
-        <p>Automatyczne pobieranie obrazów okładek produktów na podstawie linków z pliku Excel.</p>
-        <ul>
-            <li>✅ Wsparcie dla wielu formatów obrazów</li>
-            <li>✅ Konwersja WebP na PNG</li>
-            <li>✅ Filtrowanie po kodach EAN</li>
-            <li>✅ Eksport do ZIP</li>
-        </ul>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        if st.button("🚀 Otwórz narzędzie pobierania", key="btn_covers", type="primary"):
-            st.switch_page("pages/1_pobieranie_okladek.py")
+    st.markdown("""
+    <div class='tool-card'>
+    <h3>📥 Pobieranie Okładek</h3>
+    <p>Automatyczne pobieranie obrazów okładek produktów na podstawie linków z pliku Excel.</p>
+    <ul>
+        <li>✅ Wsparcie dla wielu formatów obrazów</li>
+        <li>✅ Konwersja WebP na PNG</li>
+        <li>✅ Filtrowanie po kodach EAN</li>
+        <li>✅ Eksport do ZIP</li>
+    </ul>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    if st.button("🚀 Otwórz narzędzie pobierania", key="btn_covers", type="primary"):
+        st.switch_page("pages/1_pobieranie_okladek.py")
 
 with col2:
-    with st.container():
-        st.markdown("""
-        <div class='tool-card'>
-        <h3>📝 Konwerter HTML</h3>
-        <p>Konwersja opisów produktów z formatu tekstowego na HTML z zachowaniem formatowania.</p>
-        <ul>
-            <li>✅ Automatyczne wykrywanie nagłówków</li>
-            <li>✅ Konwersja list punktowanych</li>
-            <li>✅ Formatowanie tekstu (bold, italic)</li>
-            <li>✅ Eksport do Excel</li>
-        </ul>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        if st.button("🚀 Otwórz konwerter HTML", key="btn_html", type="primary"):
-            st.switch_page("pages/2_zmiana_opisu_html.py")
+    st.markdown("""
+    <div class='tool-card'>
+    <h3>📝 Konwerter HTML</h3>
+    <p>Konwersja opisów produktów z formatu tekstowego na HTML z zachowaniem formatowania.</p>
+    <ul>
+        <li>✅ Automatyczne wykrywanie nagłówków</li>
+        <li>✅ Konwersja list punktowanych</li>
+        <li>✅ Formatowanie tekstu (bold, italic)</li>
+        <li>✅ Eksport do Excel</li>
+    </ul>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    if st.button("🚀 Otwórz konwerter HTML", key="btn_html", type="primary"):
+        st.switch_page("pages/2_zmiana_opisu_html.py")
 
 # Sekcja z szybkimi linkami
 st.markdown("---")
@@ -182,26 +178,7 @@ with st.expander("📊 Statystyki użycia"):
 
 # Stopka
 st.markdown("---")
-
-# Footer z dodatkowymi informacjami
-footer_col1, footer_col2, footer_col3 = st.columns([1, 2, 1])
-
-with footer_col1:
-    st.markdown("""
-    <div style='text-align: center; color: #888;'>
-    <small>Wersja 1.0.0</small>
-    </div>
-    """, unsafe_allow_html=True)
-
-with footer_col2:
-    st.markdown(
-        "<div style='text-align: center; color: #888;'>Made with ❤️ using Streamlit</div>",
-        unsafe_allow_html=True
-    )
-
-with footer_col3:
-    st.markdown("""
-    <div style='text-align: center; color: #888;'>
-    <small>© 2024</small>
-    </div>
-    """, unsafe_allow_html=True)
+st.markdown(
+    "<div style='text-align: center; color: #888;'>Made with ❤️ using Streamlit</div>",
+    unsafe_allow_html=True
+)
