@@ -1,0 +1,76 @@
+name: Keep Streamlit App Alive & Monitor
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'  # Co 6 godzin
+  workflow_dispatch:
+
+jobs:
+  ping-and-monitor:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+      
+      - name: Ping and Test App
+        id: ping
+        run: |
+          import requests
+          import time
+          import sys
+          
+          url = "${{ secrets.STREAMLIT_APP_URL }}"
+          
+          max_retries = 3
+          retry_delay = 10
+          
+          for attempt in range(max_retries):
+              try:
+                  print(f"Attempt {attempt + 1}/{max_retries}")
+                  
+                  # Pierwszy request - może trwać dłużej jeśli app śpi
+                  response = requests.get(url, timeout=60)
+                  
+                  if response.status_code == 200:
+                      print(f"✅ Success! App is responsive (HTTP {response.status_code})")
+                      
+                      # Sprawdź czas odpowiedzi
+                      start = time.time()
+                      response2 = requests.get(url, timeout=30)
+                      load_time = time.time() - start
+                      
+                      print(f"⚡ Load time: {load_time:.2f} seconds")
+                      
+                      if load_time > 10:
+                          print("⚠️ App was probably sleeping (slow initial response)")
+                      else:
+                          print("✨ App was already active (fast response)")
+                      
+                      sys.exit(0)
+                  else:
+                      print(f"⚠️ Unexpected status code: {response.status_code}")
+                      
+              except requests.RequestException as e:
+                  print(f"❌ Error: {e}")
+                  
+                  if attempt < max_retries - 1:
+                      print(f"Waiting {retry_delay} seconds before retry...")
+                      time.sleep(retry_delay)
+                  else:
+                      print("Failed after all retries")
+                      sys.exit(1)
+        shell: python
+      
+      - name: Create summary
+        if: always()
+        run: |
+          echo "## 📊 Keep-Alive Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Time:** $(date '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "- **App URL:** ${{ secrets.STREAMLIT_APP_URL }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status:** ${{ steps.ping.outcome }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Next run in approximately 6 hours ⏰" >> $GITHUB_STEP_SUMMARY
