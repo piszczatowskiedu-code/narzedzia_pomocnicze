@@ -1,0 +1,19 @@
+[[pages]]
+path = "app.py"
+name = "🏠 Strona główna"
+icon = "🏠"
+
+[[pages]]
+path = "pages/1_pobieranie_okladek.py"
+name = "📥 Pobieranie okładek"
+icon = "📥"
+
+[[pages]]
+path = "pages/2_zmiana_opisu_html.py"
+name = "📝 Konwerter HTML"
+icon = "📝"
+
+[[pages]]
+path = "pages/3_konwerter_webp.py"
+name = "🖼️ Konwerter obrazów"
+icon = "🖼️"
