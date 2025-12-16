@@ -1,5 +1,9 @@
 import streamlit as st
 
+if st.query_params.get("health") == "check":
+    st.write("OK")
+    st.stop()
+
 # Konfiguracja musi być PRZED st.navigation
 st.set_page_config(
     page_title="Narzędzia Excel",
