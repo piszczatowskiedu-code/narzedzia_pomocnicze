@@ -2,7 +2,6 @@ name: Keep Streamlit App Alive
 
 on:
   schedule:
-    # Poniedziałek-Piątek o 5:30 UTC (Polska zima: 6:30, Polska lato: 7:30)
     - cron: '30 5 * * 1-5'
   workflow_dispatch:
 
@@ -11,98 +10,110 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-      - name: Check Secret
+      - name: Debug - Check Secret Format
         run: |
-          if [ -z "${{ secrets.STREAMLIT_APP_URL }}" ]; then
-            echo "❌ ERROR: STREAMLIT_APP_URL secret is not configured!"
-            echo "Please add it in Settings → Secrets and variables → Actions"
-            exit 1
-          else
-            echo "✅ Secret STREAMLIT_APP_URL is configured"
-          fi
-          
-      - name: Ping Health Check Endpoint
-        run: |
-          # Dodaj parametr health=check do URL
           APP_URL="${{ secrets.STREAMLIT_APP_URL }}"
-          HEALTH_URL="${APP_URL%/}/?health=check"
           
-          echo "🚀 Streamlit Keep-Alive Service"
-          echo "================================"
-          echo "⏰ Time: $(date '+%Y-%m-%d %H:%M:%S UTC')"
-          echo "🎯 Target: $HEALTH_URL"
-          echo ""
+          echo "🔍 DEBUG INFO"
+          echo "============="
           
-          # Pierwszy ping - budzenie aplikacji (może trwać długo)
-          echo "📡 First ping (wake-up call)..."
-          echo "   Timeout: 120 seconds (app may be sleeping)"
-          echo ""
-          
-          RESPONSE1=$(curl -s -w "\n%{http_code}|%{time_total}" --max-time 120 "$HEALTH_URL" 2>&1) || true
-          
-          BODY1=$(echo "$RESPONSE1" | head -n -1)
-          STATUS1=$(echo "$RESPONSE1" | tail -1 | cut -d'|' -f1)
-          TIME1=$(echo "$RESPONSE1" | tail -1 | cut -d'|' -f2)
-          
-          echo "   Response: $BODY1"
-          echo "   Status: $STATUS1"
-          echo "   Time: ${TIME1}s"
-          echo ""
-          
-          # Czekaj 15 sekund
-          echo "⏳ Waiting 15 seconds for full initialization..."
-          sleep 15
-          echo ""
-          
-          # Drugi ping - weryfikacja
-          echo "📡 Second ping (verification)..."
-          
-          RESPONSE2=$(curl -s -w "\n%{http_code}|%{time_total}" --max-time 30 "$HEALTH_URL" 2>&1) || true
-          
-          BODY2=$(echo "$RESPONSE2" | head -n -1)
-          STATUS2=$(echo "$RESPONSE2" | tail -1 | cut -d'|' -f1)
-          TIME2=$(echo "$RESPONSE2" | tail -1 | cut -d'|' -f2)
-          
-          echo "   Response: $BODY2"
-          echo "   Status: $STATUS2"
-          echo "   Time: ${TIME2}s"
-          echo ""
-          
-          # Ocena wyniku
-          echo "================================"
-          if [ "$STATUS2" = "200" ] && [ "$BODY2" = "OK" ]; then
-            echo "✅ SUCCESS! App is alive and responding correctly!"
-            echo "RESULT=success" >> $GITHUB_ENV
-          elif [ "$STATUS2" = "200" ]; then
-            echo "✅ SUCCESS! App is responding (Status 200)"
-            echo "RESULT=success" >> $GITHUB_ENV
-          elif [ "$STATUS1" = "200" ]; then
-            echo "⚠️ PARTIAL SUCCESS - First ping worked, second had issues"
-            echo "RESULT=partial" >> $GITHUB_ENV
-          else
-            echo "❌ WARNING: App may need manual check"
-            echo "   Status codes: $STATUS1 → $STATUS2"
-            echo "RESULT=failed" >> $GITHUB_ENV
+          # Sprawdź czy secret istnieje
+          if [ -z "$APP_URL" ]; then
+            echo "❌ SECRET IS EMPTY!"
+            exit 1
           fi
           
-      - name: Create Summary Report
-        if: always()
+          # Pokaż długość URL (bez ujawniania)
+          echo "URL length: ${#APP_URL} characters"
+          
+          # Sprawdź czy zaczyna się od https
+          if [[ "$APP_URL" == https://* ]]; then
+            echo "✅ URL starts with https://"
+          else
+            echo "❌ URL does NOT start with https://"
+          fi
+          
+          # Sprawdź czy zawiera streamlit
+          if [[ "$APP_URL" == *streamlit* ]]; then
+            echo "✅ URL contains 'streamlit'"
+          else
+            echo "⚠️ URL does not contain 'streamlit'"
+          fi
+          
+          # Sprawdź czy kończy się na /
+          if [[ "$APP_URL" == */ ]]; then
+            echo "ℹ️ URL ends with /"
+          else
+            echo "ℹ️ URL does not end with /"
+          fi
+          
+      - name: Ping with Full Debug Output
         run: |
-          echo "## 🌟 Streamlit Keep-Alive Report" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
-          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| ⏰ Time | $(date '+%Y-%m-%d %H:%M:%S UTC') |" >> $GITHUB_STEP_SUMMARY
-          echo "| 📍 Endpoint | \`?health=check\` |" >> $GITHUB_STEP_SUMMARY
+          APP_URL="${{ secrets.STREAMLIT_APP_URL }}"
           
-          if [ "$RESULT" = "success" ]; then
-            echo "| ✅ Status | **Alive & Healthy** |" >> $GITHUB_STEP_SUMMARY
-          elif [ "$RESULT" = "partial" ]; then
-            echo "| ⚠️ Status | **Partial Success** |" >> $GITHUB_STEP_SUMMARY
+          # Usuń trailing slash jeśli jest
+          APP_URL="${APP_URL%/}"
+          
+          # Zbuduj health URL
+          HEALTH_URL="${APP_URL}/?health=check"
+          
+          echo ""
+          echo "🎯 Pinging: [URL HIDDEN]/?health=check"
+          echo "⏰ Time: $(date '+%Y-%m-%d %H:%M:%S UTC')"
+          echo ""
+          
+          # ========== PING 1: Podstawowy test ==========
+          echo "═══════════════════════════════════════"
+          echo "📡 TEST 1: Basic connectivity"
+          echo "═══════════════════════════════════════"
+          
+          curl -v --max-time 120 "$HEALTH_URL" 2>&1 | head -50
+          
+          echo ""
+          echo ""
+          
+          # ========== PING 2: Tylko status ==========
+          echo "═══════════════════════════════════════"
+          echo "📡 TEST 2: Status check"
+          echo "═══════════════════════════════════════"
+          
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 "$HEALTH_URL" 2>&1) || HTTP_CODE="FAILED"
+          echo "HTTP Status Code: $HTTP_CODE"
+          
+          echo ""
+          
+          # ========== PING 3: Pełna odpowiedź ==========
+          echo "═══════════════════════════════════════"
+          echo "📡 TEST 3: Response body"
+          echo "═══════════════════════════════════════"
+          
+          RESPONSE=$(curl -s --max-time 30 "$HEALTH_URL" 2>&1) || RESPONSE="[CURL FAILED]"
+          echo "Response body:"
+          echo "$RESPONSE" | head -20
+          
+          echo ""
+          
+          # ========== PING 4: Test bez health param ==========
+          echo "═══════════════════════════════════════"
+          echo "📡 TEST 4: Main URL (without health param)"
+          echo "═══════════════════════════════════════"
+          
+          MAIN_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 60 "$APP_URL" 2>&1) || MAIN_CODE="FAILED"
+          echo "Main URL HTTP Status: $MAIN_CODE"
+          
+          echo ""
+          echo "═══════════════════════════════════════"
+          echo "📋 SUMMARY"
+          echo "═══════════════════════════════════════"
+          echo "Health endpoint status: $HTTP_CODE"
+          echo "Main URL status: $MAIN_CODE"
+          
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "✅ Health check passed!"
+          elif [ "$MAIN_CODE" = "200" ]; then
+            echo "⚠️ Main URL works but health endpoint doesn't"
+            echo "   → Check if health check code is in your app"
           else
-            echo "| ❌ Status | **Needs Attention** |" >> $GITHUB_STEP_SUMMARY
+            echo "❌ Both endpoints failed"
+            echo "   → Check if app URL is correct"
           fi
-          
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "---" >> $GITHUB_STEP_SUMMARY
-          echo "*Triggered by: ${{ github.event_name }}*" >> $GITHUB_STEP_SUMMARY
