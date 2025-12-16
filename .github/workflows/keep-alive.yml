@@ -10,153 +10,72 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-      - name: Ping and Collect Data
+      - name: Ping Streamlit App
         id: ping
         run: |
           APP_URL="${{ secrets.STREAMLIT_APP_URL }}"
-          
-          # Sprawdź secret
-          if [ -z "$APP_URL" ]; then
-            echo "SECRET_OK=false" >> $GITHUB_OUTPUT
-            echo "ERROR_MSG=Secret STREAMLIT_APP_URL is empty" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-          
-          echo "SECRET_OK=true" >> $GITHUB_OUTPUT
-          
-          # Usuń trailing slash
           APP_URL="${APP_URL%/}"
           HEALTH_URL="${APP_URL}/?health=check"
           
-          echo "⏰ Time: $(date '+%Y-%m-%d %H:%M:%S UTC')"
+          echo "🚀 Streamlit Keep-Alive"
+          echo "⏰ $(date '+%Y-%m-%d %H:%M:%S UTC')"
           echo ""
           
-          # ===== PING 1: Wake up =====
-          echo "📡 PING 1: Wake-up call (timeout 120s)..."
-          
-          START1=$(date +%s.%N)
-          RESPONSE1=$(curl -s --max-time 120 "$HEALTH_URL" 2>&1) || RESPONSE1="CURL_ERROR"
-          CODE1=$(curl -s -o /dev/null -w "%{http_code}" --max-time 120 "$HEALTH_URL" 2>&1) || CODE1="000"
-          END1=$(date +%s.%N)
-          TIME1=$(echo "$END1 - $START1" | bc 2>/dev/null || echo "N/A")
-          
+          # Ping 1: Wake up (z -L = follow redirects)
+          echo "📡 Ping 1: Wake up..."
+          RESPONSE1=$(curl -sL --max-time 120 "$HEALTH_URL" 2>&1) || RESPONSE1="ERROR"
+          CODE1=$(curl -sL -o /dev/null -w "%{http_code}" --max-time 120 "$HEALTH_URL" 2>&1) || CODE1="000"
           echo "   Status: $CODE1"
           echo "   Response: $RESPONSE1"
-          echo "   Time: ${TIME1}s"
           
           echo "PING1_CODE=$CODE1" >> $GITHUB_OUTPUT
           echo "PING1_RESPONSE=$RESPONSE1" >> $GITHUB_OUTPUT
-          echo "PING1_TIME=$TIME1" >> $GITHUB_OUTPUT
           
-          # Poczekaj
+          # Wait
           echo ""
-          echo "⏳ Waiting 15 seconds..."
-          sleep 15
+          echo "⏳ Waiting 10 seconds..."
+          sleep 10
           
-          # ===== PING 2: Verify =====
+          # Ping 2: Verify
           echo ""
-          echo "📡 PING 2: Verification (timeout 30s)..."
-          
-          START2=$(date +%s.%N)
-          RESPONSE2=$(curl -s --max-time 30 "$HEALTH_URL" 2>&1) || RESPONSE2="CURL_ERROR"
-          CODE2=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 "$HEALTH_URL" 2>&1) || CODE2="000"
-          END2=$(date +%s.%N)
-          TIME2=$(echo "$END2 - $START2" | bc 2>/dev/null || echo "N/A")
-          
+          echo "📡 Ping 2: Verify..."
+          RESPONSE2=$(curl -sL --max-time 30 "$HEALTH_URL" 2>&1) || RESPONSE2="ERROR"
+          CODE2=$(curl -sL -o /dev/null -w "%{http_code}" --max-time 30 "$HEALTH_URL" 2>&1) || CODE2="000"
           echo "   Status: $CODE2"
           echo "   Response: $RESPONSE2"
-          echo "   Time: ${TIME2}s"
           
           echo "PING2_CODE=$CODE2" >> $GITHUB_OUTPUT
           echo "PING2_RESPONSE=$RESPONSE2" >> $GITHUB_OUTPUT
-          echo "PING2_TIME=$TIME2" >> $GITHUB_OUTPUT
           
-          # ===== PING 3: Main URL =====
+          # Result
           echo ""
-          echo "📡 PING 3: Main URL test..."
-          
-          CODE3=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 "$APP_URL" 2>&1) || CODE3="000"
-          echo "   Main URL Status: $CODE3"
-          
-          echo "PING3_CODE=$CODE3" >> $GITHUB_OUTPUT
-          
-          # ===== Determine Result =====
           if [ "$CODE2" = "200" ] && [ "$RESPONSE2" = "OK" ]; then
+            echo "✅ SUCCESS! App is alive!"
             echo "RESULT=success" >> $GITHUB_OUTPUT
-            echo "RESULT_MSG=App is alive and healthy" >> $GITHUB_OUTPUT
           elif [ "$CODE2" = "200" ]; then
+            echo "✅ SUCCESS! App responding."
             echo "RESULT=success" >> $GITHUB_OUTPUT
-            echo "RESULT_MSG=App responding (200) but response is not OK" >> $GITHUB_OUTPUT
-          elif [ "$CODE1" = "200" ]; then
-            echo "RESULT=partial" >> $GITHUB_OUTPUT
-            echo "RESULT_MSG=First ping worked, second failed" >> $GITHUB_OUTPUT
-          elif [ "$CODE3" = "200" ]; then
-            echo "RESULT=no_health" >> $GITHUB_OUTPUT
-            echo "RESULT_MSG=Main URL works but health endpoint missing" >> $GITHUB_OUTPUT
           else
+            echo "❌ FAILED"
             echo "RESULT=failed" >> $GITHUB_OUTPUT
-            echo "RESULT_MSG=All pings failed" >> $GITHUB_OUTPUT
           fi
           
-      - name: Create Summary Report
+      - name: Summary
         if: always()
         run: |
           echo "## 🌟 Streamlit Keep-Alive Report" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Generated:** $(date '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "**Time:** $(date '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           
-          # Status badge
-          RESULT="${{ steps.ping.outputs.RESULT }}"
-          if [ "$RESULT" = "success" ]; then
+          if [ "${{ steps.ping.outputs.RESULT }}" = "success" ]; then
             echo "### ✅ Status: SUCCESS" >> $GITHUB_STEP_SUMMARY
-          elif [ "$RESULT" = "partial" ]; then
-            echo "### ⚠️ Status: PARTIAL SUCCESS" >> $GITHUB_STEP_SUMMARY
-          elif [ "$RESULT" = "no_health" ]; then
-            echo "### ⚠️ Status: HEALTH ENDPOINT MISSING" >> $GITHUB_STEP_SUMMARY
           else
             echo "### ❌ Status: FAILED" >> $GITHUB_STEP_SUMMARY
           fi
           
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Message:** ${{ steps.ping.outputs.RESULT_MSG }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          
-          # Ping results table
-          echo "### 📊 Ping Results" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Ping | HTTP Code | Response | Time |" >> $GITHUB_STEP_SUMMARY
-          echo "|------|-----------|----------|------|" >> $GITHUB_STEP_SUMMARY
-          echo "| 1️⃣ Wake-up | ${{ steps.ping.outputs.PING1_CODE }} | \`${{ steps.ping.outputs.PING1_RESPONSE }}\` | ${{ steps.ping.outputs.PING1_TIME }}s |" >> $GITHUB_STEP_SUMMARY
-          echo "| 2️⃣ Verify | ${{ steps.ping.outputs.PING2_CODE }} | \`${{ steps.ping.outputs.PING2_RESPONSE }}\` | ${{ steps.ping.outputs.PING2_TIME }}s |" >> $GITHUB_STEP_SUMMARY
-          echo "| 3️⃣ Main URL | ${{ steps.ping.outputs.PING3_CODE }} | - | - |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          
-          # Diagnosis
-          echo "### 🔍 Diagnosis" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          
-          if [ "${{ steps.ping.outputs.SECRET_OK }}" = "false" ]; then
-            echo "❌ **Secret not configured!** Add STREAMLIT_APP_URL in repository settings." >> $GITHUB_STEP_SUMMARY
-          elif [ "$RESULT" = "success" ]; then
-            echo "✅ Everything works correctly!" >> $GITHUB_STEP_SUMMARY
-          elif [ "$RESULT" = "no_health" ]; then
-            echo "⚠️ **Health endpoint not found.** Make sure this code is at the TOP of your Streamlit app:" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo '```python' >> $GITHUB_STEP_SUMMARY
-            echo 'import streamlit as st' >> $GITHUB_STEP_SUMMARY
-            echo '' >> $GITHUB_STEP_SUMMARY
-            echo 'if st.query_params.get("health") == "check":' >> $GITHUB_STEP_SUMMARY
-            echo '    st.write("OK")' >> $GITHUB_STEP_SUMMARY
-            echo '    st.stop()' >> $GITHUB_STEP_SUMMARY
-            echo '```' >> $GITHUB_STEP_SUMMARY
-          else
-            echo "❌ **Possible issues:**" >> $GITHUB_STEP_SUMMARY
-            echo "- App URL might be incorrect" >> $GITHUB_STEP_SUMMARY
-            echo "- App might have errors (check Streamlit Cloud logs)" >> $GITHUB_STEP_SUMMARY
-            echo "- App might need longer timeout" >> $GITHUB_STEP_SUMMARY
-          fi
-          
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "---" >> $GITHUB_STEP_SUMMARY
-          echo "*Workflow: \`${{ github.workflow }}\` | Trigger: \`${{ github.event_name }}\`*" >> $GITHUB_STEP_SUMMARY
+          echo "| Ping | Code | Response |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|------|----------|" >> $GITHUB_STEP_SUMMARY
+          echo "| 1️⃣ Wake-up | ${{ steps.ping.outputs.PING1_CODE }} | \`${{ steps.ping.outputs.PING1_RESPONSE }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| 2️⃣ Verify | ${{ steps.ping.outputs.PING2_CODE }} | \`${{ steps.ping.outputs.PING2_RESPONSE }}\` |" >> $GITHUB_STEP_SUMMARY
