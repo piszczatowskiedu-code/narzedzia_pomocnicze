@@ -8,6 +8,7 @@ on:
 jobs:
   ping-app:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     
     steps:
       - name: Ping Streamlit App
@@ -20,45 +21,109 @@ jobs:
           echo "🚀 Streamlit Keep-Alive"
           echo "⏰ $(date '+%Y-%m-%d %H:%M:%S UTC')"
           echo ""
+          echo "🎯 Target: $HEALTH_URL"
+          echo ""
           
-          # Ping 1: Wake up (z -L = follow redirects)
-          echo "📡 Ping 1: Wake up..."
-          RESPONSE1=$(curl -sL --max-time 120 "$HEALTH_URL" 2>&1) || RESPONSE1="ERROR"
-          CODE1=$(curl -sL -o /dev/null -w "%{http_code}" --max-time 120 "$HEALTH_URL" 2>&1) || CODE1="000"
-          echo "   Status: $CODE1"
-          echo "   Response: $RESPONSE1"
+          # Ping 1: Wake up (5 minut timeout!)
+          echo "📡 Ping 1: Wake up (timeout 5 min)..."
+          echo "   Started: $(date '+%H:%M:%S')"
           
-          echo "PING1_CODE=$CODE1" >> $GITHUB_OUTPUT
-          echo "PING1_RESPONSE=$RESPONSE1" >> $GITHUB_OUTPUT
+          START=$(date +%s)
+          HTTP_RESPONSE=$(curl -sL -w "\n%{http_code}" --max-time 300 "$HEALTH_URL" 2>&1)
+          CURL_EXIT=$?
+          END=$(date +%s)
+          DURATION=$((END - START))
+          
+          BODY=$(echo "$HTTP_RESPONSE" | head -n -1)
+          CODE=$(echo "$HTTP_RESPONSE" | tail -1)
+          
+          echo "   Finished: $(date '+%H:%M:%S')"
+          echo "   Duration: ${DURATION}s"
+          echo "   Curl exit code: $CURL_EXIT"
+          echo "   HTTP code: $CODE"
+          echo "   Response: $BODY"
+          
+          # Diagnoza curl exit code
+          case $CURL_EXIT in
+            0) echo "   ✅ Curl: Success" ;;
+            6) echo "   ❌ Curl: Could not resolve host" ;;
+            7) echo "   ❌ Curl: Failed to connect" ;;
+            28) echo "   ❌ Curl: Timeout" ;;
+            *) echo "   ❌ Curl: Error code $CURL_EXIT" ;;
+          esac
+          
+          echo "PING1_CODE=$CODE" >> $GITHUB_OUTPUT
+          echo "PING1_RESPONSE=$BODY" >> $GITHUB_OUTPUT
+          echo "PING1_TIME=$DURATION" >> $GITHUB_OUTPUT
+          echo "PING1_CURL=$CURL_EXIT" >> $GITHUB_OUTPUT
+          
+          # Jeśli pierwszy ping nie zadziałał, spróbuj bez health param
+          if [ "$CURL_EXIT" != "0" ]; then
+            echo ""
+            echo "📡 Ping 1b: Try main URL..."
+            MAIN_CODE=$(curl -sL -o /dev/null -w "%{http_code}" --max-time 60 "$APP_URL" 2>&1)
+            MAIN_EXIT=$?
+            echo "   Main URL code: $MAIN_CODE (curl: $MAIN_EXIT)"
+            echo "PING1B_CODE=$MAIN_CODE" >> $GITHUB_OUTPUT
+          fi
           
           # Wait
           echo ""
-          echo "⏳ Waiting 10 seconds..."
-          sleep 10
+          echo "⏳ Waiting 15 seconds..."
+          sleep 15
           
           # Ping 2: Verify
           echo ""
           echo "📡 Ping 2: Verify..."
-          RESPONSE2=$(curl -sL --max-time 30 "$HEALTH_URL" 2>&1) || RESPONSE2="ERROR"
-          CODE2=$(curl -sL -o /dev/null -w "%{http_code}" --max-time 30 "$HEALTH_URL" 2>&1) || CODE2="000"
-          echo "   Status: $CODE2"
+          
+          RESPONSE2=$(curl -sL --max-time 60 "$HEALTH_URL" 2>&1)
+          CURL_EXIT2=$?
+          CODE2=$(curl -sL -o /dev/null -w "%{http_code}" --max-time 60 "$HEALTH_URL" 2>&1)
+          
+          echo "   HTTP code: $CODE2"
           echo "   Response: $RESPONSE2"
+          echo "   Curl exit: $CURL_EXIT2"
           
           echo "PING2_CODE=$CODE2" >> $GITHUB_OUTPUT
           echo "PING2_RESPONSE=$RESPONSE2" >> $GITHUB_OUTPUT
           
           # Result
           echo ""
+          echo "════════════════════════════════"
           if [ "$CODE2" = "200" ] && [ "$RESPONSE2" = "OK" ]; then
-            echo "✅ SUCCESS! App is alive!"
+            echo "✅ SUCCESS! App is alive and healthy!"
             echo "RESULT=success" >> $GITHUB_OUTPUT
           elif [ "$CODE2" = "200" ]; then
-            echo "✅ SUCCESS! App responding."
+            echo "✅ SUCCESS! App is responding."
             echo "RESULT=success" >> $GITHUB_OUTPUT
+          elif [ "$CODE" = "200" ]; then
+            echo "⚠️ PARTIAL: First ping worked, second failed."
+            echo "RESULT=partial" >> $GITHUB_OUTPUT
           else
-            echo "❌ FAILED"
+            echo "❌ FAILED: Could not reach app."
             echo "RESULT=failed" >> $GITHUB_OUTPUT
           fi
+          
+      - name: DNS and Network Debug
+        if: failure() || steps.ping.outputs.RESULT == 'failed'
+        run: |
+          APP_URL="${{ secrets.STREAMLIT_APP_URL }}"
+          # Wyciągnij domenę
+          DOMAIN=$(echo "$APP_URL" | sed -e 's|https://||' -e 's|/.*||')
+          
+          echo "🔍 Network Debug"
+          echo "================"
+          echo ""
+          echo "Domain: $DOMAIN"
+          echo ""
+          echo "📡 DNS Lookup:"
+          nslookup "$DOMAIN" || echo "DNS lookup failed"
+          echo ""
+          echo "📡 Ping test:"
+          ping -c 3 "$DOMAIN" || echo "Ping failed"
+          echo ""
+          echo "📡 Curl verbose (first 30 lines):"
+          curl -vL --max-time 30 "https://$DOMAIN" 2>&1 | head -30
           
       - name: Summary
         if: always()
@@ -68,14 +133,26 @@ jobs:
           echo "**Time:** $(date '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           
-          if [ "${{ steps.ping.outputs.RESULT }}" = "success" ]; then
+          RESULT="${{ steps.ping.outputs.RESULT }}"
+          if [ "$RESULT" = "success" ]; then
             echo "### ✅ Status: SUCCESS" >> $GITHUB_STEP_SUMMARY
+          elif [ "$RESULT" = "partial" ]; then
+            echo "### ⚠️ Status: PARTIAL" >> $GITHUB_STEP_SUMMARY
           else
             echo "### ❌ Status: FAILED" >> $GITHUB_STEP_SUMMARY
           fi
           
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Ping | Code | Response |" >> $GITHUB_STEP_SUMMARY
-          echo "|------|------|----------|" >> $GITHUB_STEP_SUMMARY
-          echo "| 1️⃣ Wake-up | ${{ steps.ping.outputs.PING1_CODE }} | \`${{ steps.ping.outputs.PING1_RESPONSE }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| 2️⃣ Verify | ${{ steps.ping.outputs.PING2_CODE }} | \`${{ steps.ping.outputs.PING2_RESPONSE }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "### 📊 Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Ping | HTTP | Response | Time | Curl |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|------|----------|------|------|" >> $GITHUB_STEP_SUMMARY
+          echo "| 1️⃣ Wake | ${{ steps.ping.outputs.PING1_CODE }} | \`${{ steps.ping.outputs.PING1_RESPONSE }}\` | ${{ steps.ping.outputs.PING1_TIME }}s | ${{ steps.ping.outputs.PING1_CURL }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| 2️⃣ Verify | ${{ steps.ping.outputs.PING2_CODE }} | \`${{ steps.ping.outputs.PING2_RESPONSE }}\` | - | - |" >> $GITHUB_STEP_SUMMARY
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔍 Curl Exit Codes" >> $GITHUB_STEP_SUMMARY
+          echo "- \`0\` = Success" >> $GITHUB_STEP_SUMMARY
+          echo "- \`6\` = Could not resolve host" >> $GITHUB_STEP_SUMMARY
+          echo "- \`7\` = Connection refused" >> $GITHUB_STEP_SUMMARY
+          echo "- \`28\` = Timeout" >> $GITHUB_STEP_SUMMARY
