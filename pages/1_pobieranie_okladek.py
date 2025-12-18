@@ -300,7 +300,7 @@ if uploaded_file is not None:
             start_download = st.button(
                 "📥 POBIERZ OKŁADKI",
                 type="primary",
-                idth="stretch"
+                width="stretch"
             )
         
         if start_download:
@@ -543,7 +543,7 @@ if uploaded_file is not None:
                     data=zip_buffer,
                     file_name=zip_filename,
                     mime="application/zip",
-                    idth="stretch",
+                    width="stretch",
                     type="primary"
                 )
                 
@@ -572,7 +572,7 @@ else:
                     'https://example.com/image3.webp'
                 ]
             })
-            st.dataframe(example_df, idth="stretch")
+            st.dataframe(example_df, width="stretch")
 
 st.markdown("---")
 st.markdown(

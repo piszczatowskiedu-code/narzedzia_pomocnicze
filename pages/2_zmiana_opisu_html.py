@@ -244,7 +244,7 @@ if uploaded_file is not None:
         # Przycisk konwersji
         st.markdown("---")
         
-        if st.button("🚀 KONWERTUJ NA HTML", type="primary", idth="stretch"):
+        if st.button("🚀 KONWERTUJ NA HTML", type="primary", width="stretch"):
             with st.spinner("Konwertuję..."):
                 # Przygotuj dane do konwersji
                 working_df = df.copy()
@@ -312,7 +312,7 @@ if uploaded_file is not None:
                     data=output,
                     file_name=output_filename,
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    idth="stretch",
+                    width="stretch",
                     type="primary"
                 )
                     
