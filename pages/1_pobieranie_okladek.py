@@ -260,11 +260,37 @@ if uploaded_file is not None:
                 "Kolumna EAN", options=df.columns.tolist(),
                 index=df.columns.tolist().index('EAN') if 'EAN' in df.columns else 0
             )
-        with col2:
-            link_column = st.selectbox(
-                "Kolumna z linkami", options=df.columns.tolist(),
-                index=df.columns.tolist().index('Link do okładki') if 'Link do okładki' in df.columns else 0
-            )
+
+        st.markdown("#### 🔗 Kolumny z linkami do okładek")
+        st.caption("Wybierz od 1 do 5 kolumn. Pliki będą nazwane: EAN, EAN_1, EAN_2, EAN_3, EAN_4.")
+
+        # Etykiety nazw plików: pierwsza kolumna → EAN (bez sufiksu), kolejne → EAN_1, EAN_2, EAN_3, EAN_4
+        col_suffix_labels = ["EAN", "EAN_1", "EAN_2", "EAN_3", "EAN_4"]
+
+        cols_ui = st.columns(5)
+        link_columns = []
+        col_options_none = ["(brak)"] + df.columns.tolist()
+
+        for i, ui_col in enumerate(cols_ui):
+            with ui_col:
+                default_label = "Link do okładki" if i == 0 else f"Link do okładki {i}"
+                if default_label in df.columns:
+                    default_idx = col_options_none.index(default_label)
+                else:
+                    default_idx = 0  # "(brak)"
+                chosen = st.selectbox(
+                    f"→ {col_suffix_labels[i]}",
+                    options=col_options_none,
+                    index=default_idx,
+                    key=f"link_col_{i}"
+                )
+                if chosen != "(brak)":
+                    # suffix: None dla pierwszej kolumny (EAN), i dla kolejnych (EAN_1, EAN_2, EAN_3)
+                    link_columns.append((i, chosen))
+
+        if not link_columns:
+            st.warning("⚠️ Wybierz co najmniej jedną kolumnę z linkami.")
+
 
         st.markdown("### 🔍 Filtr EAN (opcjonalne)")
         ean_filter_text = st.text_area(
@@ -272,7 +298,7 @@ if uploaded_file is not None:
             height=100
         )
 
-        if st.button("🚀 ROZPOCZNIJ POBIERANIE", type="primary", use_container_width=True):
+        if st.button("🚀 ROZPOCZNIJ POBIERANIE", type="primary", use_container_width=True, disabled=not link_columns):
 
             downloaded_files = {}
             ean_filter_set   = parse_ean_list(ean_filter_text) if ean_filter_text else None
@@ -291,15 +317,17 @@ if uploaded_file is not None:
             log_expander = st.expander("⚠️ Dziennik zdarzeń", expanded=True)
 
             total_rows = len(df)
+            total_tasks = total_rows * len(link_columns)
+            task_counter = 0
 
             for idx, row in df.iterrows():
-                progress_bar.progress((idx + 1) / total_rows)
 
-                link = row[link_column]
-                ean  = row[ean_column]
+                ean = row[ean_column]
 
-                if pd.isna(link) or pd.isna(ean):
+                if pd.isna(ean):
                     stats['puste_wiersze'] += 1
+                    task_counter += len(link_columns)
+                    progress_bar.progress(min(task_counter / total_tasks, 1.0))
                     continue
 
                 try:
@@ -309,128 +337,142 @@ if uploaded_file is not None:
 
                 if ean_filter_set and ean not in ean_filter_set:
                     stats['nieznalezione_ean'] += 1
+                    task_counter += len(link_columns)
+                    progress_bar.progress(min(task_counter / total_tasks, 1.0))
                     continue
 
                 found_eans.add(ean)
-                link_str = str(link).strip()
-                status_text.text(f"Pobieranie: {ean} ({idx + 1}/{total_rows})")
 
-                # ── 1. Weryfikacja URL ────────────────────────────────────────
-                ext_from_url, skip_reason = sprawdz_format_z_url(link_str)
-                if skip_reason:
-                    msg = f"EAN: {ean} | Pominięto — {skip_reason}"
-                    skipped_log.append(msg)
-                    log_expander.warning(msg)
-                    stats['pominiete'] += 1
-                    continue
+                for col_num, col_name in link_columns:
+                    task_counter += 1
+                    progress_bar.progress(min(task_counter / total_tasks, 1.0))
 
-                # ── 2. Pobieranie ─────────────────────────────────────────────
-                try:
-                    response = pobierz_obraz(link_str)
-                except Exception as e:
-                    msg = f"EAN: {ean} | Błąd pobierania: {e}"
-                    errors_log.append(msg)
-                    log_expander.error(msg)
-                    stats['blad'] += 1
-                    time.sleep(delay_between)
-                    continue
+                    link = row[col_name]
 
-                # ── 3. Weryfikacja Content-Type ───────────────────────────────
-                ct_ok, ct_reason = sprawdz_content_type(response)
-                if not ct_ok:
-                    msg = f"EAN: {ean} | Pominięto — {ct_reason}"
-                    skipped_log.append(msg)
-                    log_expander.warning(msg)
-                    stats['pominiete'] += 1
-                    time.sleep(delay_between)
-                    continue
+                    if pd.isna(link) or str(link).strip() == '':
+                        stats['puste_wiersze'] += 1
+                        continue
 
-                image_data = response.content
+                    link_str = str(link).strip()
+                    ean_label = ean if col_num == 0 else f"{ean}_{col_num}"
+                    status_text.text(f"Pobieranie: {ean_label} ({task_counter}/{total_tasks})")
 
-                # ── 4. Walidacja PIL ──────────────────────────────────────────
-                pil_ok, pil_reason = waliduj_pil(image_data)
-                if not pil_ok:
-                    msg = f"EAN: {ean} | Pominięto — {pil_reason}"
-                    skipped_log.append(msg)
-                    log_expander.warning(msg)
-                    stats['pominiete'] += 1
-                    time.sleep(delay_between)
-                    continue
+                    # ── 1. Weryfikacja URL ────────────────────────────────────────
+                    ext_from_url, skip_reason = sprawdz_format_z_url(link_str)
+                    if skip_reason:
+                        msg = f"EAN: {ean_label} | Pominięto — {skip_reason}"
+                        skipped_log.append(msg)
+                        log_expander.warning(msg)
+                        stats['pominiete'] += 1
+                        continue
 
-                # ── 5. Ustal rozszerzenie z Content-Type ─────────────────────
-                ct_header = response.headers.get('Content-Type', '').split(';')[0].strip().lower()
-                ct_ext_map = {
-                    'image/jpeg': '.jpg', 'image/png': '.png', 'image/gif': '.gif',
-                    'image/webp': '.webp', 'image/bmp': '.bmp'
-                }
-                extension    = ct_ext_map.get(ct_header, ext_from_url)
-                if extension not in ALLOWED_FORMATS:
-                    extension = DEFAULT_FORMAT
-                original_ext = extension
-
-                # ── 6. Konwersje formatów ─────────────────────────────────────
-
-                # WebP → PNG
-                if convert_webp and original_ext == '.webp':
+                    # ── 2. Pobieranie ─────────────────────────────────────────────
                     try:
-                        image_data = convert_webp_to_png(image_data, remove_transparency=handle_transparency)
-                        extension  = '.png'
-                        stats['webp_png'] += 1
+                        response = pobierz_obraz(link_str)
                     except Exception as e:
-                        msg = f"EAN: {ean} | Błąd konwersji WebP→PNG: {e}"
+                        msg = f"EAN: {ean_label} | Błąd pobierania: {e}"
                         errors_log.append(msg)
                         log_expander.error(msg)
                         stats['blad'] += 1
                         time.sleep(delay_between)
                         continue
 
-                # GIF → JPG
-                elif convert_gif and original_ext == '.gif':
-                    try:
-                        image_data = convert_to_jpg(image_data, source_format='.gif')
-                        extension  = '.jpg'
-                        stats['gif_jpg'] += 1
-                    except Exception as e:
-                        msg = f"EAN: {ean} | Błąd konwersji GIF→JPG: {e}"
-                        errors_log.append(msg)
-                        log_expander.error(msg)
-                        stats['blad'] += 1
+                    # ── 3. Weryfikacja Content-Type ───────────────────────────────
+                    ct_ok, ct_reason = sprawdz_content_type(response)
+                    if not ct_ok:
+                        msg = f"EAN: {ean_label} | Pominięto — {ct_reason}"
+                        skipped_log.append(msg)
+                        log_expander.warning(msg)
+                        stats['pominiete'] += 1
                         time.sleep(delay_between)
                         continue
 
-                # BMP → JPG
-                elif convert_bmp and original_ext == '.bmp':
-                    try:
-                        image_data = convert_to_jpg(image_data, source_format='.bmp')
-                        extension  = '.jpg'
-                        stats['bmp_jpg'] += 1
-                    except Exception as e:
-                        msg = f"EAN: {ean} | Błąd konwersji BMP→JPG: {e}"
-                        errors_log.append(msg)
-                        log_expander.error(msg)
-                        stats['blad'] += 1
+                    image_data = response.content
+
+                    # ── 4. Walidacja PIL ──────────────────────────────────────────
+                    pil_ok, pil_reason = waliduj_pil(image_data)
+                    if not pil_ok:
+                        msg = f"EAN: {ean_label} | Pominięto — {pil_reason}"
+                        skipped_log.append(msg)
+                        log_expander.warning(msg)
+                        stats['pominiete'] += 1
                         time.sleep(delay_between)
                         continue
 
-                # Białe tło dla pozostałych formatów (JPG/PNG) z przezroczystością
-                else:
-                    if handle_transparency:
-                        processed = add_white_background(image_data)
-                        if processed != image_data:
-                            image_data = processed
-                            stats['transparency_fixed'] += 1
+                    # ── 5. Ustal rozszerzenie z Content-Type ─────────────────────
+                    ct_header = response.headers.get('Content-Type', '').split(';')[0].strip().lower()
+                    ct_ext_map = {
+                        'image/jpeg': '.jpg', 'image/png': '.png', 'image/gif': '.gif',
+                        'image/webp': '.webp', 'image/bmp': '.bmp'
+                    }
+                    extension    = ct_ext_map.get(ct_header, ext_from_url)
+                    if extension not in ALLOWED_FORMATS:
+                        extension = DEFAULT_FORMAT
+                    original_ext = extension
 
-                # ── 7. Zapis ──────────────────────────────────────────────────
-                filename = f"{ean}{extension}"
-                if filename in downloaded_files and not overwrite:
-                    stats['istnieje'] += 1
+                    # ── 6. Konwersje formatów ─────────────────────────────────────
+
+                    # WebP → PNG
+                    if convert_webp and original_ext == '.webp':
+                        try:
+                            image_data = convert_webp_to_png(image_data, remove_transparency=handle_transparency)
+                            extension  = '.png'
+                            stats['webp_png'] += 1
+                        except Exception as e:
+                            msg = f"EAN: {ean_label} | Błąd konwersji WebP→PNG: {e}"
+                            errors_log.append(msg)
+                            log_expander.error(msg)
+                            stats['blad'] += 1
+                            time.sleep(delay_between)
+                            continue
+
+                    # GIF → JPG
+                    elif convert_gif and original_ext == '.gif':
+                        try:
+                            image_data = convert_to_jpg(image_data, source_format='.gif')
+                            extension  = '.jpg'
+                            stats['gif_jpg'] += 1
+                        except Exception as e:
+                            msg = f"EAN: {ean_label} | Błąd konwersji GIF→JPG: {e}"
+                            errors_log.append(msg)
+                            log_expander.error(msg)
+                            stats['blad'] += 1
+                            time.sleep(delay_between)
+                            continue
+
+                    # BMP → JPG
+                    elif convert_bmp and original_ext == '.bmp':
+                        try:
+                            image_data = convert_to_jpg(image_data, source_format='.bmp')
+                            extension  = '.jpg'
+                            stats['bmp_jpg'] += 1
+                        except Exception as e:
+                            msg = f"EAN: {ean_label} | Błąd konwersji BMP→JPG: {e}"
+                            errors_log.append(msg)
+                            log_expander.error(msg)
+                            stats['blad'] += 1
+                            time.sleep(delay_between)
+                            continue
+
+                    # Białe tło dla pozostałych formatów (JPG/PNG) z przezroczystością
+                    else:
+                        if handle_transparency:
+                            processed = add_white_background(image_data)
+                            if processed != image_data:
+                                image_data = processed
+                                stats['transparency_fixed'] += 1
+
+                    # ── 7. Zapis ──────────────────────────────────────────────────
+                    filename = f"{ean}{extension}" if col_num == 0 else f"{ean_label}{extension}"
+                    if filename in downloaded_files and not overwrite:
+                        stats['istnieje'] += 1
+                        time.sleep(delay_between)
+                        continue
+
+                    downloaded_files[filename] = image_data
+                    stats['sukces'] += 1
+
                     time.sleep(delay_between)
-                    continue
-
-                downloaded_files[filename] = image_data
-                stats['sukces'] += 1
-
-                time.sleep(delay_between)
 
             # ── Podsumowanie pominięć ─────────────────────────────────────────
             if skipped_log:
