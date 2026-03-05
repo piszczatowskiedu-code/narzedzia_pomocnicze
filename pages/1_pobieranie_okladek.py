@@ -1,7 +1,10 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 import requests
 import os
+import base64
+import json
 from pathlib import Path
 from urllib.parse import urlparse
 import time
@@ -213,6 +216,40 @@ def parse_ean_list(ean_text):
 
 if 'download_results' not in st.session_state:
     st.session_state.download_results = None
+
+# ── Obsługa zamiany obrazków (drag & drop) ───────────────────────────────────
+swap_param = st.query_params.get('swap', None)
+if swap_param and st.session_state.download_results:
+    try:
+        swap = json.loads(swap_param)
+        ean   = swap['ean']
+        suf_a = swap['a']   # np. '' lub '_1'
+        suf_b = swap['b']
+        files = st.session_state.download_results['downloaded_files']
+
+        # Znajdź pliki do zamiany
+        key_a = next((k for k in files if k.rsplit('.', 1)[0] == f"{ean}{suf_a}"), None)
+        key_b = next((k for k in files if k.rsplit('.', 1)[0] == f"{ean}{suf_b}"), None)
+
+        if key_a and key_b:
+            ext_a = '.' + key_a.rsplit('.', 1)[1]
+            ext_b = '.' + key_b.rsplit('.', 1)[1]
+            data_a = files.pop(key_a)
+            data_b = files.pop(key_b)
+            files[f"{ean}{suf_a}{ext_b}"] = data_b
+            files[f"{ean}{suf_b}{ext_a}"] = data_a
+        elif key_a and not key_b:
+            ext_a = '.' + key_a.rsplit('.', 1)[1]
+            data_a = files.pop(key_a)
+            files[f"{ean}{suf_b}{ext_a}"] = data_a
+        elif key_b and not key_a:
+            ext_b = '.' + key_b.rsplit('.', 1)[1]
+            data_b = files.pop(key_b)
+            files[f"{ean}{suf_a}{ext_b}"] = data_b
+
+        st.query_params.clear()
+    except Exception as e:
+        st.query_params.clear()
 
 # ── UI ───────────────────────────────────────────────────────────────────────
 
@@ -480,12 +517,22 @@ if uploaded_file is not None:
                     for msg in skipped_log:
                         st.warning(msg)
 
+            # Ustal raz na zawsze kolejność EAN-ów (stabilna, niezależna od kluczy słownika)
+            ean_order = []
+            seen_order_set = set()
+            for fname in downloaded_files:
+                ean_key = fname.rsplit('.', 1)[0].split('_')[0]
+                if ean_key not in seen_order_set:
+                    seen_order_set.add(ean_key)
+                    ean_order.append(ean_key)
+
             st.session_state.download_results = {
                 'stats': stats,
                 'errors_log': errors_log,
                 'skipped_log': skipped_log,
                 'downloaded_files': downloaded_files,
                 'missing_eans': ean_filter_set - found_eans if ean_filter_set else None,
+                'ean_order': ean_order,
             }
             st.rerun()
 
@@ -519,66 +566,199 @@ if uploaded_file is not None:
                     use_container_width=True
                 )
 
-                # ── Podgląd okładek ───────────────────────────────────────────
+                # ── Podgląd okładek z drag & drop ────────────────────────────
                 st.markdown("---")
                 st.markdown("## 🖼️ Podgląd pobranych okładek")
+                st.caption("Przeciągnij obrazek na inną pozycję w tym samym wierszu, aby zamienić nazwy plików.")
 
                 downloaded_files = res['downloaded_files']
 
-                # Zbierz unikalne EAN-y zachowując kolejność
-                seen_eans = []
-                seen_set  = set()
-                for fname in downloaded_files:
-                    base = fname.rsplit('.', 1)[0]
-                    ean  = base.split('_')[0]
-                    if ean not in seen_set:
-                        seen_set.add(ean)
-                        seen_eans.append(ean)
-
                 SUFFIXES      = ['', '_1', '_2', '_3', '_4']
                 SUFFIX_LABELS = ['EAN', 'EAN_1', 'EAN_2', 'EAN_3', 'EAN_4']
+                THUMB_SIZE    = 150
 
-                # Sprawdź które sufiksy faktycznie wystąpiły
-                active_suffixes = []
-                active_labels   = []
-                for suf, lbl in zip(SUFFIXES, SUFFIX_LABELS):
-                    for fname in downloaded_files:
-                        base = fname.rsplit('.', 1)[0]
-                        if base.endswith(suf) and (suf != '' or '_' not in base.split('_', 1)[-1] if '_' in base else True):
-                            active_suffixes.append(suf)
-                            active_labels.append(lbl)
-                            break
+                # Użyj ustalonej raz kolejności EAN-ów (stabilna między reruns)
+                seen_eans = res['ean_order']
 
-                header_cols = st.columns([1] + [2] * len(active_suffixes))
-                header_cols[0].markdown("**EAN**")
-                for i, lbl in enumerate(active_labels):
-                    header_cols[i + 1].markdown(f"**{lbl}**")
-                st.markdown("<hr style='margin:4px 0'>", unsafe_allow_html=True)
-
-                THUMB_SIZE = 160
-
+                # Zbuduj strukturę danych dla JS: {ean: {suf: base64_png | null}}
+                rows_data = []
                 for ean in seen_eans:
-                    row_cols = st.columns([1] + [2] * len(active_suffixes))
-                    row_cols[0].markdown(f"`{ean}`")
-                    for i, suf in enumerate(active_suffixes):
+                    cols_data = []
+                    for suf, lbl in zip(SUFFIXES, SUFFIX_LABELS):
                         target_base = f"{ean}{suf}"
-                        match = next(
-                            (fn for fn in downloaded_files if fn.rsplit('.', 1)[0] == target_base),
-                            None
-                        )
+                        match = next((fn for fn in downloaded_files if fn.rsplit('.', 1)[0] == target_base), None)
                         if match:
                             try:
                                 img = Image.open(io.BytesIO(downloaded_files[match]))
                                 img.thumbnail((THUMB_SIZE, THUMB_SIZE))
-                                thumb_buf = io.BytesIO()
-                                img.save(thumb_buf, format='PNG')
-                                thumb_buf.seek(0)
-                                row_cols[i + 1].image(thumb_buf, caption=match, use_container_width=False)
+                                buf = io.BytesIO()
+                                img.save(buf, format='PNG')
+                                b64 = base64.b64encode(buf.getvalue()).decode()
+                                cols_data.append({'suf': suf, 'label': lbl, 'img': b64, 'fname': match})
                             except Exception:
-                                row_cols[i + 1].markdown("⚠️ błąd")
+                                cols_data.append({'suf': suf, 'label': lbl, 'img': None, 'fname': None})
                         else:
-                            row_cols[i + 1].markdown("<span style='color:#aaa'>—</span>", unsafe_allow_html=True)
-                    st.markdown("<hr style='margin:2px 0; border-color:#f0f0f0'>", unsafe_allow_html=True)
+                            cols_data.append({'suf': suf, 'label': lbl, 'img': None, 'fname': None})
+                    rows_data.append({'ean': ean, 'cols': cols_data})
+
+                rows_json = json.dumps(rows_data, ensure_ascii=False)
+                n_cols    = len(SUFFIXES)
+
+                html_component = f"""
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+  body {{ font-family: sans-serif; font-size: 13px; background: transparent; }}
+
+  table {{ width: 100%; border-collapse: collapse; }}
+  th {{ background: #f0f2f6; padding: 8px 6px; text-align: center;
+        font-weight: 600; color: #333; border-bottom: 2px solid #ddd; }}
+  th.ean-col {{ text-align: left; padding-left: 10px; width: 140px; }}
+  td {{ padding: 6px; vertical-align: middle; border-bottom: 1px solid #f0f0f0; }}
+  td.ean-cell {{ font-family: monospace; font-size: 12px; color: #555;
+                 padding-left: 10px; white-space: nowrap; }}
+
+  .slot {{
+    width: {THUMB_SIZE + 16}px; height: {THUMB_SIZE + 36}px;
+    border: 2px dashed #ccc; border-radius: 8px;
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center; background: #fafafa;
+    transition: border-color .2s, background .2s;
+    position: relative; cursor: default;
+  }}
+  .slot.has-img {{ border-style: solid; border-color: #c8d8ea; background: #fff;
+                   cursor: grab; }}
+  .slot.has-img:active {{ cursor: grabbing; }}
+  .slot.drag-over {{ border-color: #1f77b4 !important; background: #e8f4ff !important; }}
+  .slot.dragging  {{ opacity: .4; }}
+
+  .slot img {{ max-width: {THUMB_SIZE}px; max-height: {THUMB_SIZE}px;
+               border-radius: 4px; pointer-events: none; }}
+  .slot .fname {{ font-size: 10px; color: #888; margin-top: 4px;
+                  text-align: center; word-break: break-all;
+                  max-width: {THUMB_SIZE + 8}px; }}
+  .slot .empty-label {{ color: #bbb; font-size: 12px; }}
+
+  .swap-flash {{ animation: flashGreen .6s ease; }}
+  @keyframes flashGreen {{
+    0%   {{ background: #d4f5d4; border-color: #4caf50; }}
+    100% {{ background: #fff;    border-color: #c8d8ea; }}
+  }}
+</style>
+</head>
+<body>
+<table>
+  <thead><tr>
+    <th class="ean-col">EAN</th>
+    <th>EAN</th><th>EAN_1</th><th>EAN_2</th><th>EAN_3</th><th>EAN_4</th>
+  </tr></thead>
+  <tbody id="tbody"></tbody>
+</table>
+
+<script>
+const rows = {rows_json};
+
+let dragSrc = null; // {{ean, suf, el}}
+
+function buildTable() {{
+  const tbody = document.getElementById('tbody');
+  tbody.innerHTML = '';
+  rows.forEach(row => {{
+    const tr = document.createElement('tr');
+
+    // EAN cell
+    const td0 = document.createElement('td');
+    td0.className = 'ean-cell';
+    td0.textContent = row.ean;
+    tr.appendChild(td0);
+
+    row.cols.forEach(col => {{
+      const td = document.createElement('td');
+      td.style.textAlign = 'center';
+      const slot = buildSlot(row.ean, col);
+      td.appendChild(slot);
+      tr.appendChild(td);
+    }});
+
+    tbody.appendChild(tr);
+  }});
+}}
+
+function buildSlot(ean, col) {{
+  const slot = document.createElement('div');
+  slot.className = 'slot' + (col.img ? ' has-img' : '');
+  slot.dataset.ean = ean;
+  slot.dataset.suf = col.suf;
+
+  if (col.img) {{
+    const img = document.createElement('img');
+    img.src = 'data:image/png;base64,' + col.img;
+    slot.appendChild(img);
+    const lbl = document.createElement('div');
+    lbl.className = 'fname';
+    lbl.textContent = col.fname;
+    slot.appendChild(lbl);
+
+    slot.draggable = true;
+
+    slot.addEventListener('dragstart', e => {{
+      dragSrc = {{ ean, suf: col.suf, el: slot }};
+      slot.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+    }});
+    slot.addEventListener('dragend', () => slot.classList.remove('dragging'));
+  }} else {{
+    const lbl = document.createElement('div');
+    lbl.className = 'empty-label';
+    lbl.textContent = '—';
+    slot.appendChild(lbl);
+  }}
+
+  slot.addEventListener('dragover', e => {{
+    if (dragSrc && dragSrc.ean === ean && dragSrc.suf !== col.suf) {{
+      e.preventDefault();
+      slot.classList.add('drag-over');
+    }}
+  }});
+  slot.addEventListener('dragleave', () => slot.classList.remove('drag-over'));
+
+  slot.addEventListener('drop', e => {{
+    e.preventDefault();
+    slot.classList.remove('drag-over');
+    if (!dragSrc || dragSrc.ean !== ean || dragSrc.suf === col.suf) return;
+
+    // Zamień dane w rows[]
+    const rowObj = rows.find(r => r.ean === ean);
+    const colA   = rowObj.cols.find(c => c.suf === dragSrc.suf);
+    const colB   = rowObj.cols.find(c => c.suf === col.suf);
+    [colA.img, colB.img]     = [colB.img, colA.img];
+    [colA.fname, colB.fname] = [colB.fname, colA.fname];
+    buildTable();
+
+    // Wyślij zamianę do Streamlit przez query param
+    const swap = JSON.stringify({{ ean: ean, a: dragSrc.suf, b: col.suf }});
+    const url  = new URL(window.parent.location.href);
+    url.searchParams.set('swap', swap);
+    window.parent.history.replaceState(null, '', url.toString());
+
+    // Trigger Streamlit rerun przez symulację nawigacji
+    window.parent.dispatchEvent(new Event('popstate'));
+  }});
+
+  return slot;
+}}
+
+buildTable();
+</script>
+</body>
+</html>
+"""
+
+                table_height = 60 + len(seen_eans) * (THUMB_SIZE + 60)
+                components.html(html_component, height=table_height, scrolling=True)
 
     except Exception as e:
         st.error(f"Wystąpił błąd krytyczny: {e}")
