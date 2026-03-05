@@ -315,6 +315,63 @@ if uploaded_file is not None:
                     width="stretch",
                     type="primary"
                 )
+
+                # ── Podgląd wyrenderowanego HTML ──────────────────────────────
+                st.markdown("---")
+                st.markdown("## 👁️ Podgląd opisów HTML")
+                st.caption(f"Wyrenderowany widok dla {len(export_df)} produktów.")
+
+                import streamlit.components.v1 as _components
+
+                rows_html_parts = []
+                for _, row in export_df.iterrows():
+                    ean_val  = str(row['sku'])
+                    desc_val = str(row['description-B2B']) if row['description-B2B'] else "<em style='color:#bbb'>— brak opisu —</em>"
+                    rows_html_parts.append(
+                        "<tr>"
+                        f"<td class='ean-cell'>{ean_val}</td>"
+                        f"<td class='desc-cell'>{desc_val}</td>"
+                        "</tr>"
+                    )
+                rows_html = "\n".join(rows_html_parts)
+
+                preview_html = (
+                    "<!DOCTYPE html><html><head><meta charset='utf-8'><style>"
+                    "* {box-sizing:border-box;margin:0;padding:0;}"
+                    "body {font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;"
+                    "font-size:14px;color:#222;background:#fff;padding:8px;}"
+                    "table {width:100%;border-collapse:collapse;}"
+                    "thead th {background:#f0f2f6;padding:10px 14px;text-align:left;"
+                    "font-weight:700;font-size:13px;color:#444;border-bottom:2px solid #dde;"
+                    "position:sticky;top:0;z-index:10;}"
+                    "th.ean-head {width:170px;}"
+                    "tr:nth-child(even) td {background:#fafbfc;}"
+                    "tr:hover td {background:#f0f4ff;}"
+                    "td {padding:12px 14px;vertical-align:top;border-bottom:1px solid #eee;}"
+                    "td.ean-cell {font-family:monospace;font-size:12px;color:#666;"
+                    "width:170px;white-space:nowrap;}"
+                    "td.desc-cell h1,td.desc-cell h2,td.desc-cell h3,"
+                    "td.desc-cell h4,td.desc-cell h5,td.desc-cell h6 {"
+                    "margin:.5em 0 .3em;font-weight:700;color:#000;}"
+                    "td.desc-cell h1 {font-size:1.4em;}"
+                    "td.desc-cell h2 {font-size:1.25em;}"
+                    "td.desc-cell h3 {font-size:1.1em;}"
+                    "td.desc-cell p {margin:.4em 0;line-height:1.6;}"
+                    "td.desc-cell ul,td.desc-cell ol {margin:.4em 0 .4em 1.4em;line-height:1.7;}"
+                    "td.desc-cell li {margin-bottom:2px;}"
+                    "td.desc-cell strong {font-weight:700;}"
+                    "td.desc-cell em {font-style:italic;color:#555;}"
+                    "</style></head><body>"
+                    "<table><thead><tr>"
+                    "<th class='ean-head'>EAN / SKU</th>"
+                    "<th>Opis (wyrenderowany HTML)</th>"
+                    "</tr></thead><tbody>"
+                    + rows_html +
+                    "</tbody></table></body></html>"
+                )
+
+                preview_height = min(200 + len(export_df) * 120, 4000)
+                _components.html(preview_html, height=preview_height, scrolling=True)
                     
     except Exception as e:
         st.error(f"❌ Błąd: {str(e)}")
