@@ -519,6 +519,67 @@ if uploaded_file is not None:
                     use_container_width=True
                 )
 
+                # ── Podgląd okładek ───────────────────────────────────────────
+                st.markdown("---")
+                st.markdown("## 🖼️ Podgląd pobranych okładek")
+
+                downloaded_files = res['downloaded_files']
+
+                # Zbierz unikalne EAN-y zachowując kolejność
+                seen_eans = []
+                seen_set  = set()
+                for fname in downloaded_files:
+                    base = fname.rsplit('.', 1)[0]
+                    ean  = base.split('_')[0]
+                    if ean not in seen_set:
+                        seen_set.add(ean)
+                        seen_eans.append(ean)
+
+                SUFFIXES      = ['', '_1', '_2', '_3', '_4']
+                SUFFIX_LABELS = ['EAN', 'EAN_1', 'EAN_2', 'EAN_3', 'EAN_4']
+
+                # Sprawdź które sufiksy faktycznie wystąpiły
+                active_suffixes = []
+                active_labels   = []
+                for suf, lbl in zip(SUFFIXES, SUFFIX_LABELS):
+                    for fname in downloaded_files:
+                        base = fname.rsplit('.', 1)[0]
+                        if base.endswith(suf) and (suf != '' or '_' not in base.split('_', 1)[-1] if '_' in base else True):
+                            active_suffixes.append(suf)
+                            active_labels.append(lbl)
+                            break
+
+                header_cols = st.columns([1] + [2] * len(active_suffixes))
+                header_cols[0].markdown("**EAN**")
+                for i, lbl in enumerate(active_labels):
+                    header_cols[i + 1].markdown(f"**{lbl}**")
+                st.markdown("<hr style='margin:4px 0'>", unsafe_allow_html=True)
+
+                THUMB_SIZE = 160
+
+                for ean in seen_eans:
+                    row_cols = st.columns([1] + [2] * len(active_suffixes))
+                    row_cols[0].markdown(f"`{ean}`")
+                    for i, suf in enumerate(active_suffixes):
+                        target_base = f"{ean}{suf}"
+                        match = next(
+                            (fn for fn in downloaded_files if fn.rsplit('.', 1)[0] == target_base),
+                            None
+                        )
+                        if match:
+                            try:
+                                img = Image.open(io.BytesIO(downloaded_files[match]))
+                                img.thumbnail((THUMB_SIZE, THUMB_SIZE))
+                                thumb_buf = io.BytesIO()
+                                img.save(thumb_buf, format='PNG')
+                                thumb_buf.seek(0)
+                                row_cols[i + 1].image(thumb_buf, caption=match, use_container_width=False)
+                            except Exception:
+                                row_cols[i + 1].markdown("⚠️ błąd")
+                        else:
+                            row_cols[i + 1].markdown("<span style='color:#aaa'>—</span>", unsafe_allow_html=True)
+                    st.markdown("<hr style='margin:2px 0; border-color:#f0f0f0'>", unsafe_allow_html=True)
+
     except Exception as e:
         st.error(f"Wystąpił błąd krytyczny: {e}")
 
