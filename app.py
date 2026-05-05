@@ -23,6 +23,7 @@ pages = {
             st.Page("pages/3_konwerter_webp.py", title="Konwerter obrazów", icon="🖼️"),
             st.Page("pages/4_weryfikator_dubli.py", title="Weryfikator duplikatów", icon="🔍"),
             st.Page("pages/5_weryfikator_serii.py", title="Weryfikator serii", icon="📚"),
+            st.Page("pages/6_konwerter_pdf_jpg.py", title="Konwerter PDF → JPG", icon="📄"),
         ]
 }
 

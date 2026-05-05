@@ -76,60 +76,73 @@ with col3:
     if st.button("Otwórz konwerter obrazów", key="btn_webp", type="primary", icon="🚀", use_container_width=True):
         st.switch_page("pages/3_konwerter_webp.py")
 
-# Drugi rząd - 2 kolumny (wycentrowane)
-col4, col5, col6 = st.columns([1, 2, 1])
+# Drugi rząd - 3 kolumny
+col4, col5, col6 = st.columns(3)
+
+with col4:
+    st.markdown("""
+    <div class='tool-card'>
+    <h3>🔍 Weryfikator Duplikatów</h3>
+    <p>Wykrywanie duplikatów produktów na podstawie wydawcy, autora i podobieństwa nazwy.</p>
+    <ul>
+        <li>✅ Inteligentne wykrywanie (fuzzy matching)</li>
+        <li>✅ Filtrowanie fałszywych duplikatów (5 reguł)</li>
+        <li>✅ Grupowanie połączonych duplikatów</li>
+        <li>✅ Raport Excel z kolorowaniem grup</li>
+    </ul>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    if st.button("Otwórz weryfikator duplikatów", key="btn_duplicates", type="primary", icon="🚀", use_container_width=True):
+        st.switch_page("pages/4_weryfikator_dubli.py")
 
 with col5:
-    col_left, col_right = st.columns(2)
+    st.markdown("""
+    <div class='tool-card'>
+    <h3>📚 Weryfikator Serii</h3>
+    <p>Znajdowanie niekompletnych lub niespójnych informacji o seriach książek. Bazowane na eksporcie z ERP</p>
+    <ul>
+        <li>✅ Wykrywa brak wypełnienia kolumny "Seria"</li>
+        <li>✅ Znajduje niespójności w nazwach serii</li>
+        <li>✅ Sugeruje prawidłowe nazwy serii</li>
+        <li>✅ Raport Excel z rekomendacjami</li>
+    </ul>
+    </div>
+    """, unsafe_allow_html=True)
     
-    with col_left:
-        st.markdown("""
-        <div class='tool-card'>
-        <h3>🔍 Weryfikator Duplikatów</h3>
-        <p>Wykrywanie duplikatów produktów na podstawie wydawcy, autora i podobieństwa nazwy.</p>
-        <ul>
-            <li>✅ Inteligentne wykrywanie (fuzzy matching)</li>
-            <li>✅ Filtrowanie fałszywych duplikatów (5 reguł)</li>
-            <li>✅ Grupowanie połączonych duplikatów</li>
-            <li>✅ Raport Excel z kolorowaniem grup</li>
-        </ul>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        if st.button("Otwórz weryfikator duplikatów", key="btn_duplicates", type="primary", icon="🚀", use_container_width=True):
-            st.switch_page("pages/4_weryfikator_dubli.py")
+    if st.button("Otwórz weryfikator serii", key="btn_series", type="primary", icon="🚀", use_container_width=True):
+        st.switch_page("pages/5_weryfikator_serii.py")
+
+with col6:
+    st.markdown("""
+    <div class='tool-card'>
+    <h3>📄 Konwerter PDF → JPG</h3>
+    <p>Konwersja wielostronicowych plików PDF na obrazy JPG o wybranej rozdzielczości i jakości.</p>
+    <ul>
+        <li>✅ Konwersja każdej strony na osobny obraz</li>
+        <li>✅ Regulowana rozdzielczość (72-600 DPI)</li>
+        <li>✅ Kontrola jakości JPEG</li>
+        <li>✅ Automatyczne pakowanie do ZIP</li>
+    </ul>
+    </div>
+    """, unsafe_allow_html=True)
     
-    with col_right:
-        st.markdown("""
-        <div class='tool-card'>
-        <h3>📚 Weryfikator Serii</h3>
-        <p>Znajdowanie niekompletnych lub niespójnych informacji o seriach książek.</p>
-        <ul>
-            <li>✅ Wykrywa brak wypełnienia kolumny "Seria"</li>
-            <li>✅ Znajduje niespójności w nazwach serii</li>
-            <li>✅ Sugeruje prawidłowe nazwy serii</li>
-            <li>✅ Raport Excel z rekomendacjami</li>
-        </ul>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        if st.button("Otwórz weryfikator serii", key="btn_series", type="primary", icon="🚀", use_container_width=True):
-            st.switch_page("pages/5_weryfikator_serii.py")
+    if st.button("Otwórz konwerter PDF", key="btn_pdf", type="primary", icon="🚀", use_container_width=True):
+        st.switch_page("pages/6_konwerter_pdf_jpg.py")
 
 # Informacje dodatkowe
 with st.expander("ℹ️ Informacje o aplikacji"):
     st.markdown("""
     ### 🛠️ Pakiet narzędzi do pracy z danymi produktowymi
     
-    Ta aplikacja zawiera 5 narzędzi usprawniających pracę z danymi produktów w plikach Excel:
+    Ta aplikacja zawiera 6 narzędzi usprawniających pracę z danymi produktów w plikach Excel:
     
     1. **Pobieranie okładek** - automatyczne pobieranie obrazów produktów
     2. **Konwerter HTML** - konwersja opisów tekstowych na HTML
     3. **Konwerter obrazów** - konwersja formatów graficznych
     4. **Weryfikator duplikatów** - wykrywanie zduplikowanych produktów
     5. **Weryfikator serii** - znajdowanie problemów z seriami książek
-    
-    Każde narzędzie działa niezależnie i jest zoptymalizowane pod konkretne zadanie.
+    6. **Konwerter PDF → JPG** - konwersja stron PDF na obrazy JPG
     """)
 
 # Stopka
