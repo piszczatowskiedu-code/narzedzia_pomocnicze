@@ -24,6 +24,7 @@ pages = {
             st.Page("pages/4_weryfikator_dubli.py", title="Weryfikator duplikatów", icon="🔍"),
             st.Page("pages/5_weryfikator_serii.py", title="Weryfikator serii", icon="📚"),
             st.Page("pages/6_konwerter_pdf_jpg.py", title="Konwerter PDF → JPG", icon="📄"),
+            st.Page("pages/7_generator_kopii.py", title="Generator kopii grafik", icon="🧬"),
         ]
 }
 

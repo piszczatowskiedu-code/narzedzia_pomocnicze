@@ -130,12 +130,32 @@ with col6:
     if st.button("Otwórz konwerter PDF", key="btn_pdf", type="primary", icon="🚀", use_container_width=True):
         st.switch_page("pages/6_konwerter_pdf_jpg.py")
 
+# Trzeci rząd - 1 kolumna (wyśrodkowana)
+col7, _, _ = st.columns(3)
+
+with col7:
+    st.markdown("""
+    <div class='tool-card'>
+    <h3>🧬 Generator Kopii Grafik</h3>
+    <p>Tworzenie wielu kopii tej samej grafiki pod różnymi, zdefiniowanymi nazwami plików.</p>
+    <ul>
+        <li>✅ Jedna grafika → wiele nazwanych kopii</li>
+        <li>✅ Wiele zestawów grafika+nazwy naraz</li>
+        <li>✅ Automatyczne czyszczenie nazw plików</li>
+        <li>✅ Eksport do ZIP</li>
+    </ul>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    if st.button("Otwórz generator kopii", key="btn_copies", type="primary", icon="🚀", use_container_width=True):
+        st.switch_page("pages/7_generator_kopii.py")
+
 # Informacje dodatkowe
 with st.expander("ℹ️ Informacje o aplikacji"):
     st.markdown("""
     ### 🛠️ Pakiet narzędzi do pracy z danymi produktowymi
     
-    Ta aplikacja zawiera 6 narzędzi usprawniających pracę z danymi produktów w plikach Excel:
+    Ta aplikacja zawiera 7 narzędzi usprawniających pracę z danymi produktów w plikach Excel:
     
     1. **Pobieranie okładek** - automatyczne pobieranie obrazów produktów
     2. **Konwerter HTML** - konwersja opisów tekstowych na HTML
@@ -143,6 +163,7 @@ with st.expander("ℹ️ Informacje o aplikacji"):
     4. **Weryfikator duplikatów** - wykrywanie zduplikowanych produktów
     5. **Weryfikator serii** - znajdowanie problemów z seriami książek
     6. **Konwerter PDF → JPG** - konwersja stron PDF na obrazy JPG
+    7. **Generator kopii grafik** - tworzenie nazwanych kopii jednej grafiki
     """)
 
 # Stopka
