@@ -234,7 +234,6 @@ if uploaded_files:
                     data=file_data,
                     file_name=filename,
                     mime=f"image/{output_format.lower()}",
-                    width="stretch",
                     type="primary"
                 )
             else:
@@ -247,7 +246,6 @@ if uploaded_files:
                     data=zip_buffer,
                     file_name=zip_filename,
                     mime="application/zip",
-                    width="stretch",
                     type="primary"
                 )
             
