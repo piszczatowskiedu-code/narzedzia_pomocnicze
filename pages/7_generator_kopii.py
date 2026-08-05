@@ -118,7 +118,7 @@ with col2:
         key="names"
     )
 
-    add_btn = st.button("➕ Dodaj do listy", type="secondary", width="stretch")
+    add_btn = st.button("➕ Dodaj do listy", type="secondary")
 
 if add_btn:
     if not uploaded_image:
