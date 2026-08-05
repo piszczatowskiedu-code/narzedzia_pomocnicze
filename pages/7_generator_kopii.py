@@ -5,16 +5,6 @@ from io import BytesIO
 import streamlit as st
 from PIL import Image
 
-# ============================================
-# KONFIGURACJA STRONY
-# ============================================
-st.set_page_config(
-    page_title="Generator kopii grafik",
-    page_icon="🧬",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
-
 # Custom CSS (spójny z resztą narzędzi)
 st.markdown("""
 <style>
