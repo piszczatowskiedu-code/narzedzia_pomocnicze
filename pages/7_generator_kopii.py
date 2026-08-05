@@ -179,12 +179,11 @@ else:
             data=zip_buffer,
             file_name="grafiki.zip",
             mime="application/zip",
-            width="stretch",
             type="primary"
         )
 
     # Przycisk czyszczenia
-    if st.button("🗑️ Wyczyść wszystko", width="stretch"):
+    if st.button("🗑️ Wyczyść wszystko"):
         st.session_state.image_sets = []
         st.rerun()
 
