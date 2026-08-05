@@ -4,16 +4,6 @@ import re
 from io import BytesIO
 from typing import Optional
 
-# ============================================
-# KONFIGURACJA STRONY
-# ============================================
-st.set_page_config(
-    page_title="Konwerter opisów na HTML",
-    page_icon="📝",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
-
 # Custom CSS
 st.markdown("""
 <style>
