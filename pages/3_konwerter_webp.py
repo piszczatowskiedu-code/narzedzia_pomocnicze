@@ -4,15 +4,6 @@ import io
 import zipfile
 from datetime import datetime
 
-# ============================================
-# KONFIGURACJA STRONY
-# ============================================
-st.set_page_config(
-    page_title="Konwerter WebP",
-    page_icon="🖼️",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
 
 # Custom CSS
 st.markdown("""
