@@ -5,15 +5,6 @@ import io
 import zipfile
 from datetime import datetime
 
-# ============================================
-# KONFIGURACJA
-# ============================================
-st.set_page_config(
-    page_title="Konwerter PDF → JPG",
-    page_icon="📄",
-    layout="wide"
-)
-
 DPI = 72
 QUALITY = 95
 
