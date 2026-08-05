@@ -155,7 +155,7 @@ if uploaded_files:
     # Przycisk konwersji
     st.markdown("---")
     
-    if st.button(f"🚀 KONWERTUJ DO {output_format}", type="primary", width="stretch"):
+    if st.button(f"🚀 KONWERTUJ DO {output_format}", type="primary"):
         converted_files = {}
         errors = []
         
