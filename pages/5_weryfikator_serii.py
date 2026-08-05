@@ -6,15 +6,6 @@ import re
 from collections import defaultdict
 import time
 
-# ============================================
-# KONFIGURACJA STRONY
-# ============================================
-st.set_page_config(
-    page_title="Weryfikator serii",
-    page_icon="📚",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
 
 # Custom CSS
 st.markdown("""
