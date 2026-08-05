@@ -13,13 +13,6 @@ import io
 import zipfile
 from datetime import datetime
 
-st.set_page_config(
-    page_title="Pobieranie okładek PRO",
-    page_icon="📥",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
-
 st.markdown("""
 <style>
     .stProgress > div > div > div > div { background-color: #00cc00; }
