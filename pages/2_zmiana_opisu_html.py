@@ -98,24 +98,52 @@ def text_to_html(text: str, options: dict) -> str:
             # Lista punktowana
             if re.match(r'^[-*•]\s+', line):
                 list_items = []
-                while i < len(lines) and re.match(r'^[-*•]\s+', lines[i].strip()):
-                    item_text = re.sub(r'^[-*•]\s+', '', lines[i].strip())
-                    if options.get('convert_formatting', True):
-                        item_text = convert_inline_formatting(item_text)
-                    list_items.append(f"  <li>{item_text}</li>")
-                    i += 1
+                while i < len(lines):
+                    current_line = lines[i].strip()
+                    if re.match(r'^[-*•]\s+', current_line):
+                        item_text = re.sub(r'^[-*•]\s+', '', current_line)
+                        if options.get('convert_formatting', True):
+                            item_text = convert_inline_formatting(item_text)
+                        list_items.append(f"  <li>{item_text}</li>")
+                        i += 1
+                    elif current_line == '':
+                        # Pusta linia - sprawdź, czy lista kontynuuje się dalej
+                        j = i + 1
+                        while j < len(lines) and lines[j].strip() == '':
+                            j += 1
+                        if j < len(lines) and re.match(r'^[-*•]\s+', lines[j].strip()):
+                            i = j
+                            continue
+                        else:
+                            break
+                    else:
+                        break
                 html_parts.append("<ul>\n" + "\n".join(list_items) + "\n</ul>")
                 continue
             
             # Lista numerowana
             if re.match(r'^\d+[.)]\s+', line):
                 list_items = []
-                while i < len(lines) and re.match(r'^\d+[.)]\s+', lines[i].strip()):
-                    item_text = re.sub(r'^\d+[.)]\s+', '', lines[i].strip())
-                    if options.get('convert_formatting', True):
-                        item_text = convert_inline_formatting(item_text)
-                    list_items.append(f"  <li>{item_text}</li>")
-                    i += 1
+                while i < len(lines):
+                    current_line = lines[i].strip()
+                    if re.match(r'^\d+[.)]\s+', current_line):
+                        item_text = re.sub(r'^\d+[.)]\s+', '', current_line)
+                        if options.get('convert_formatting', True):
+                            item_text = convert_inline_formatting(item_text)
+                        list_items.append(f"  <li>{item_text}</li>")
+                        i += 1
+                    elif current_line == '':
+                        # Pusta linia - sprawdź, czy lista kontynuuje się dalej
+                        j = i + 1
+                        while j < len(lines) and lines[j].strip() == '':
+                            j += 1
+                        if j < len(lines) and re.match(r'^\d+[.)]\s+', lines[j].strip()):
+                            i = j
+                            continue
+                        else:
+                            break
+                    else:
+                        break
                 html_parts.append("<ol>\n" + "\n".join(list_items) + "\n</ol>")
                 continue
         
