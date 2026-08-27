@@ -7,24 +7,28 @@ import time
 import json
 import zipfile
 import base64
-import concurrent.futures                          # ⚡ równoległość
+import concurrent.futures
 from datetime import datetime
 from urllib.parse import quote
 
 # ══════════════════════════════════════════════════════════════════
-#  ⚡ OPTYMALIZACJA 1: Connection Pooling (Session + HTTPAdapter)
-#     Reuse TCP/TLS — eliminuje ~200-400ms handshake na każdy request
+#  POŁĄCZENIE I SESJA (Connection Pooling + Bezpieczny Auto-Retry)
 # ══════════════════════════════════════════════════════════════════
 
 def get_session() -> requests.Session:
-    """Zwraca współdzieloną sesję z connection poolingiem i auto-retry."""
+    """Współdzielona sesja z connection poolingiem i bezpiecznym ponawianiem prób."""
     if "_http_session" not in st.session_state:
         s = requests.Session()
+        retries = Retry(
+            total=3,
+            backoff_factor=0.5,
+            status_forcelist=[429, 500, 502, 503, 504],
+            raise_on_status=False
+        )
         adapter = HTTPAdapter(
-            pool_connections=20,
-            pool_maxsize=20,
-            max_retries=Retry(total=2, backoff_factor=0.1,
-                              status_forcelist=[502, 503, 504]),
+            pool_connections=10,
+            pool_maxsize=10,
+            max_retries=retries,
         )
         s.mount("https://", adapter)
         s.mount("http://", adapter)
@@ -112,10 +116,8 @@ def get_token(cfg):
     return token
 
 
-# ⚡ OPTYMALIZACJA 2: Batch fetch — 1 request zamiast N
 def fetch_products_batch(cfg, token, eans):
-    """Pobiera wiele produktów JEDNYM requestem (Akeneo limit 100).
-    Zwraca dict {ean: product_data} oraz listę błędów."""
+    """Pobiera wiele produktów jednym requestem (batch)."""
     if not eans:
         return {}, []
 
@@ -124,7 +126,6 @@ def fetch_products_batch(cfg, token, eans):
     results = {}
     errors = []
 
-    # Akeneo pozwala max 100 per request — dzielimy na chunki
     CHUNK = 100
     for i in range(0, len(eans), CHUNK):
         chunk = eans[i:i + CHUNK]
@@ -140,7 +141,7 @@ def fetch_products_batch(cfg, token, eans):
             )
             if resp.status_code == 401:
                 st.session_state.pop('akeneo_token', None)
-                return {}, [f"Błąd autoryzacji (401) — token wygasł"]
+                return {}, ["Błąd autoryzacji (401) — token wygasł"]
             resp.raise_for_status()
             data = resp.json()
 
@@ -152,7 +153,6 @@ def fetch_products_batch(cfg, token, eans):
         except requests.exceptions.RequestException as e:
             errors.append(f"Batch request error: {e}")
 
-    # Zaznacz brakujące EAN-y
     for ean in eans:
         if ean not in results:
             errors.append(f"EAN {ean}: Nie znaleziono produktu w Akeneo (404)")
@@ -161,7 +161,7 @@ def fetch_products_batch(cfg, token, eans):
 
 
 def fetch_product_single(cfg, token, ean):
-    """Fallback — pojedynczy produkt (do debug)."""
+    """Fallback — pojedynczy produkt do debugu."""
     session = get_session()
     base_url = cfg["base_url"].rstrip("/")
     try:
@@ -218,18 +218,13 @@ def extract_image_codes(product):
     return images
 
 
-# ⚡ OPTYMALIZACJA 3: Rozszerzenie z nagłówków odpowiedzi download
-#    Eliminuje osobny request fetch_media_metadata (~200ms × N grafik)
 def _ext_from_response(resp, media_code):
-    """Wyciąga rozszerzenie z Content-Disposition lub Content-Type."""
-    # 1) Content-Disposition: attachment; filename="cover.jpg"
     cd = resp.headers.get("Content-Disposition", "")
     if "filename=" in cd:
         fname = cd.split("filename=")[-1].strip().strip('"').strip("'")
         if "." in fname:
             return "." + fname.rsplit(".", 1)[-1].lower()
 
-    # 2) Content-Type → mime map
     ct = resp.headers.get("Content-Type", "").split(";")[0].strip().lower()
     mime_map = {
         "image/jpeg": ".jpg", "image/png": ".png", "image/gif": ".gif",
@@ -239,35 +234,29 @@ def _ext_from_response(resp, media_code):
     if ct in mime_map:
         return mime_map[ct]
 
-    # 3) Fallback z kodu media
     if "." in media_code:
         return "." + media_code.rsplit(".", 1)[-1].lower()
     return ".jpg"
 
 
-# ⚡ OPTYMALIZACJA 4: Funkcja do równoległego pobierania pojedynczej grafiki
 def _download_one_image(args):
-    """Worker dla ThreadPoolExecutor.
-    args = (session, token, base_url, ean, idx, img_info)
-    Zwraca (ean, idx, filename, bytes) lub (ean, idx, None, error_msg)."""
     session, token, base_url, ean, idx, img_info = args
-
     download_url = img_info.get("download_url")
-    if download_url:
-        url = download_url
-    else:
+    if not download_url:
         code = img_info["code"]
         if "/" not in code and len(code) >= 4:
             code = "/".join(code[:4]) + "/" + code
         encoded = "/".join(quote(p, safe="") for p in code.split("/"))
-        url = f"{base_url}/api/rest/v1/media-files/{encoded}/download"
+        download_url = f"{base_url}/api/rest/v1/media-files/{encoded}/download"
 
     try:
         resp = session.get(
-            url,
+            download_url,
             headers={"Authorization": f"Bearer {token}"},
             timeout=TIMEOUT,
         )
+        if resp.status_code == 429:
+            return (ean, idx, None, "Przekroczono limit zapytań (Rate Limit 429)")
         if resp.status_code == 404:
             return (ean, idx, None, f"plik nie istnieje (404): {img_info['code']}")
         resp.raise_for_status()
@@ -351,8 +340,11 @@ with st.sidebar:
         help="Pobiera tylko 'base_image', pomijając image_2–image_5."
     )
     max_workers = st.slider(
-        "Równoległe pobieranie (wątki)", 1, 20, 10,
-        help="Więcej = szybciej, ale większe obciążenie serwera Akeneo."
+        "Równoległe pobieranie (wątki)", 
+        min_value=1, 
+        max_value=8, 
+        value=4,
+        help="Zalecane: 3-5. Bezpieczne dla zasobów serwera Akeneo."
     )
     max_gallery = 4
 
@@ -424,7 +416,7 @@ if st.button("🚀 POBIERZ GRAFIKI", type="primary", use_container_width=True, d
     status_text = st.empty()
     log_expander = st.expander("⚠️ Dziennik zdarzeń", expanded=True)
 
-    # ── KROK 1: Batch fetch wszystkich produktów (1 request) ──────
+    # ── KROK 1: Batch fetch (1 request) ───────────────────────────
     status_text.text("📦 Pobieranie danych produktów (batch)...")
     products_map, batch_errors = fetch_products_batch(cfg, token, ean_list)
 
@@ -438,8 +430,8 @@ if st.button("🚀 POBIERZ GRAFIKI", type="primary", use_container_width=True, d
 
     progress_bar.progress(0.2)
 
-    # ── KROK 2: Zbierz listę grafik do pobrania ───────────────────
-    download_tasks = []  # args dla _download_one_image
+    # ── KROK 2: Przygotowanie listy grafik ────────────────────────
+    download_tasks = []
 
     for ean in ean_list:
         product = products_map.get(ean)
@@ -470,7 +462,7 @@ if st.button("🚀 POBIERZ GRAFIKI", type="primary", use_container_width=True, d
 
     progress_bar.progress(0.3)
 
-    # ── KROK 3: Równoległe pobieranie grafik (ThreadPool) ─────────
+    # ── KROK 3: Równoległe pobieranie grafik ──────────────────────
     status_text.text(f"🖼️ Pobieranie {len(download_tasks)} grafik równolegle...")
 
     if download_tasks:
@@ -486,15 +478,11 @@ if st.button("🚀 POBIERZ GRAFIKI", type="primary", use_container_width=True, d
                 done_count += 1
                 ean, idx, filename, data_or_err = future.result()
 
-                # Aktualizuj progress (30%–100%)
                 pct = 0.3 + 0.7 * (done_count / total)
                 progress_bar.progress(min(pct, 1.0))
-                status_text.text(
-                    f"🖼️ Pobrano {done_count}/{total} grafik..."
-                )
+                status_text.text(f"🖼️ Pobrano {done_count}/{total} grafik...")
 
                 if filename is None:
-                    # data_or_err to komunikat błędu
                     msg = f"EAN {ean}: {data_or_err}"
                     errors_log.append(msg)
                     log_expander.error(msg)
@@ -506,8 +494,6 @@ if st.button("🚀 POBIERZ GRAFIKI", type="primary", use_container_width=True, d
                     product_previews[ean]['files'].append((filename, data_or_err))
                 stats['sukces'] += 1
 
-    # Posortuj pliki w podglądach wg idx (kolejność może być losowa z ThreadPool)
-    # Używamy nazwy pliku: {ean}.ext = idx 0, {ean}_{i}.ext = idx i
     for ean in product_previews:
         product_previews[ean]['files'].sort(
             key=lambda x: (
@@ -516,7 +502,6 @@ if st.button("🚀 POBIERZ GRAFIKI", type="primary", use_container_width=True, d
             )
         )
 
-    # Usuń puste
     product_previews = {k: v for k, v in product_previews.items() if v['files']}
 
     progress_bar.progress(1.0)
@@ -624,7 +609,7 @@ if st.session_state.akeneo_results:
         else:
             st.info("Zaznacz przynajmniej jedną grafikę, aby pobrać ZIP.")
 else:
-    st.info("💡 Wklej listę EAN-ów i kliknij „POBIERZ GRAFIKI", aby rozpocząć.")
+    st.info('💡 Wklej listę EAN-ów i kliknij "POBIERZ GRAFIKI", aby rozpocząć.')
 
 st.markdown("---")
 st.markdown(
