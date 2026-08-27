@@ -11,33 +11,28 @@ import concurrent.futures
 from datetime import datetime
 from urllib.parse import quote
 
-# ══════════════════════════════════════════════════════════════════
-#  POŁĄCZENIE I SESJA (Connection Pooling + Bezpieczny Auto-Retry)
-# ══════════════════════════════════════════════════════════════════
+# ⚡ Ustawienie układu aplikacji na szeroki (WIDE)
+try:
+    st.set_page_config(
+        page_title="Pobieranie okładek z Akeneo",
+        page_icon="📥",
+        layout="wide"
+    )
+except Exception:
+    pass  # Jeśli st.set_page_config zostało wywołane w app.py
 
-def get_session() -> requests.Session:
-    """Współdzielona sesja z connection poolingiem i bezpiecznym ponawianiem prób."""
-    if "_http_session" not in st.session_state:
-        s = requests.Session()
-        retries = Retry(
-            total=3,
-            backoff_factor=0.5,
-            status_forcelist=[429, 500, 502, 503, 504],
-            raise_on_status=False
-        )
-        adapter = HTTPAdapter(
-            pool_connections=10,
-            pool_maxsize=10,
-            max_retries=retries,
-        )
-        s.mount("https://", adapter)
-        s.mount("http://", adapter)
-        st.session_state._http_session = s
-    return st.session_state._http_session
-
-
+# ⚡ Dodatkowy CSS znoszący ograniczenia szerokości Streamlit
 st.markdown("""
 <style>
+    /* Wymuszenie szerokości na 95% ekranu */
+    .main .block-container {
+        max-width: 95% !important;
+        padding-top: 2rem !important;
+        padding-bottom: 2rem !important;
+        padding-left: 2rem !important;
+        padding-right: 2rem !important;
+    }
+    
     .main-header { font-size: 2.5rem; font-weight: bold; color: #1f77b4; text-align: center; margin-bottom: 1rem; }
     textarea::placeholder { color: #e0e0e0 !important; opacity: 0.4 !important; }
     .akeneo-slot {
