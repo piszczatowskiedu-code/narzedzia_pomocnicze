@@ -148,13 +148,17 @@ def normalize_media_code(code):
     return f"{prefix}/{code}"
 
 
-GALLERY_ATTRS = ["image_2", "image_3", "image_4", "image_5"]
-
-
 def extract_image_codes(product):
-    """Ekstrahuje kody grafik z produktu: 'base_image' (główna), potem 'image_2'..'image_5' (dodatkowe, w tej kolejności)."""
+    """Ekstrahuje kody grafik z produktu.
+
+    Kolejność (zweryfikowana z rzeczywistymi danymi w Akeneo):
+    - główna grafika = pierwszy element galerii 'images'
+    - pojedynczy atrybut 'image' oraz pozostałe elementy 'images' = grafiki dodatkowe
+    - inne atrybuty z rozszerzeniem graficznym = fallback na końcu
+    """
     values = product.get("values", {}) or {}
     images = []
+    seen = set()
 
     def first_data(attr):
         arr = values.get(attr)
@@ -169,14 +173,37 @@ def extract_image_codes(product):
                 return data
         return None
 
-    main_image = first_data("base_image")
-    if isinstance(main_image, str) and main_image:
-        images.append({"code": main_image, "label": "Zdjęcie główne", "attribute": "base_image"})
+    def add_image(code, attribute):
+        if not code or code in seen:
+            return
+        seen.add(code)
+        label = "Zdjęcie główne" if not images else f"Grafika {len(images)}"
+        images.append({"code": code, "label": label, "attribute": attribute})
 
-    for idx, attr in enumerate(GALLERY_ATTRS, start=1):
-        code = first_data(attr)
-        if isinstance(code, str) and code:
-            images.append({"code": code, "label": f"Grafika {idx}", "attribute": attr})
+    # Galeria 'images' — pierwszy element staje się grafiką główną, reszta dodatkowymi
+    gallery = values.get("images")
+    if gallery:
+        for entry in gallery:
+            data = entry.get("data")
+            items = data if isinstance(data, list) else ([data] if isinstance(data, str) else [])
+            for item in items:
+                code = item if isinstance(item, str) else (item.get("data") if isinstance(item, dict) else None)
+                add_image(code, "images")
+
+    # Pojedynczy atrybut 'image' — dodatkowa (chyba że galeria była pusta, wtedy zostaje główną)
+    add_image(first_data("image"), "image")
+
+    # Fallback: inne atrybuty zawierające coś, co wygląda jak kod/nazwa pliku graficznego
+    for attr, arr in values.items():
+        if attr in ("image", "images") or not isinstance(arr, list):
+            continue
+        for entry in arr:
+            data = entry.get("data")
+            candidates = data if isinstance(data, list) else ([data] if isinstance(data, str) else [])
+            for item in candidates:
+                code = item if isinstance(item, str) else (item.get("data") if isinstance(item, dict) else None)
+                if code and code.lower().endswith(IMAGE_EXTENSIONS):
+                    add_image(code, attr)
 
     return images
 
@@ -324,6 +351,45 @@ with st.sidebar:
             st.session_state.akeneo_results = None
             st.rerun()
 
+
+with st.expander("🐞 Debug: podejrzyj surowe dane produktu z Akeneo"):
+    st.caption(
+        "Wpisz jeden EAN i pobierz jego pełne dane z API, żeby sprawdzić, "
+        "jak faktycznie nazywają się atrybuty grafik i czy mają wypełnione wartości."
+    )
+    debug_ean = st.text_input("EAN do sprawdzenia", key="debug_ean_input")
+    if st.button("🔍 Pobierz surowe dane", key="debug_fetch_btn"):
+        if not debug_ean.strip():
+            st.warning("Podaj EAN.")
+        else:
+            try:
+                debug_token = get_token(cfg)
+                debug_product, debug_err = fetch_product(cfg, debug_token, debug_ean.strip())
+                if debug_err:
+                    st.error(debug_err)
+                elif debug_product:
+                    values = debug_product.get("values", {}) or {}
+
+                    image_like_keys = {
+                        k: v for k, v in values.items()
+                        if any(kw in k.lower() for kw in ("image", "zdj", "grafik", "foto", "cover", "oklad"))
+                    }
+
+                    if image_like_keys:
+                        st.success(f"Znaleziono {len(image_like_keys)} atrybutów pasujących do wzorca grafiki:")
+                        st.json(image_like_keys)
+                    else:
+                        st.warning(
+                            "Nie znaleziono atrybutów zawierających w nazwie 'image', 'zdj', 'grafik', "
+                            "'foto', 'cover' ani 'oklad'. Zobacz pełną listę atrybutów poniżej."
+                        )
+                        st.write("Wszystkie dostępne atrybuty (klucze):")
+                        st.code("\n".join(sorted(values.keys())))
+
+                    with st.expander("Pełny JSON produktu"):
+                        st.json(debug_product)
+            except Exception as e:
+                st.error(f"Błąd: {e}")
 
 st.markdown("### 🔢 Lista EAN-ów")
 ean_text = st.text_area(
@@ -498,6 +564,14 @@ if st.session_state.akeneo_results:
                             key=f"sel_{ean}_{i}"
                         )
                         st.caption(filename)
+                        st.download_button(
+                            "⬇️ Pobierz",
+                            data=file_data,
+                            file_name=filename,
+                            mime=mime,
+                            key=f"dl_{ean}_{i}",
+                            use_container_width=True
+                        )
 
                         if checked:
                             selected_files[filename] = file_data
