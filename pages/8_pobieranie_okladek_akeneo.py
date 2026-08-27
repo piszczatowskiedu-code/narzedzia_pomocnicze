@@ -304,44 +304,19 @@ with st.sidebar:
     only_main_image = st.checkbox(
         "Tylko zdjęcie główne",
         value=False,
-        help="Jeśli zaznaczone, pobiera tylko atrybut 'image', pomijając galerię."
+        help="Jeśli zaznaczone, pobiera tylko 'base_image', pomijając image_2–image_5."
     )
 
-    max_gallery = st.slider(
-        "Maks. dodatkowych grafik z galerii",
-        min_value=0, max_value=4, value=4,
-        disabled=only_main_image,
-        help="Ile grafik z galerii (poza główną) pobrać na produkt. Podgląd ma stałą siatkę 5 slotów (główna + 4 dodatkowe)."
-    )
-
-    delay_between = st.slider(
-        "Opóźnienie między produktami (s)",
-        min_value=0.0, max_value=3.0, value=0.3, step=0.1
-    )
-
-    fetch_metadata = st.checkbox(
-        "Pobieraj prawdziwe nazwy/rozszerzenia plików",
-        value=True,
-        help="Dodatkowe zapytanie do API na grafikę — dokładniejsze rozszerzenie pliku, ale wolniejsze."
-    )
-
-    st.markdown("---")
-    if st.button("🔌 Testuj połączenie", type="secondary", use_container_width=True):
-        try:
-            with st.spinner("Łączenie z Akeneo..."):
-                st.session_state.pop('akeneo_token', None)
-                get_token(cfg)
-            st.success("✅ Połączenie udane — token uzyskany poprawnie.")
-        except requests.exceptions.HTTPError as e:
-            st.error(f"❌ Błąd autoryzacji: {e}")
-        except requests.exceptions.RequestException as e:
-            st.error(f"❌ Błąd połączenia: {e}")
+    max_gallery = 4
+    delay_between = 0.10
+    fetch_metadata = True
 
     if st.session_state.akeneo_results:
         st.markdown("---")
         if st.button("🗑️ Wyczyść wyniki", type="secondary", use_container_width=True):
             st.session_state.akeneo_results = None
             st.rerun()
+
 
 st.markdown("### 🔢 Lista EAN-ów")
 ean_text = st.text_area(
