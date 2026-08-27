@@ -160,7 +160,14 @@ def extract_image_codes(product):
         arr = values.get(attr)
         if not arr:
             return None
-        return arr[0].get("data")
+        # Atrybut może być scopable/localizable — ma wtedy kilka wpisów
+        # (po jednym na kanał/język). Szukamy pierwszego z realną wartością,
+        # zamiast bezwarunkowo brać arr[0], który może być pusty dla danego scope.
+        for entry in arr:
+            data = entry.get("data")
+            if data:
+                return data
+        return None
 
     main_image = first_data("base_image")
     if isinstance(main_image, str) and main_image:
