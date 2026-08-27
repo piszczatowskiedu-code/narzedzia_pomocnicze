@@ -3,6 +3,7 @@ import requests
 import io
 import time
 import zipfile
+import base64
 from datetime import datetime
 from PIL import Image
 from urllib.parse import quote
@@ -11,11 +12,46 @@ st.markdown("""
 <style>
     .main-header { font-size: 2.5rem; font-weight: bold; color: #1f77b4; text-align: center; margin-bottom: 1rem; }
     textarea::placeholder { color: #e0e0e0 !important; opacity: 0.4 !important; }
+    .akeneo-slot {
+        width: 100%;
+        aspect-ratio: 1 / 1;
+        border-radius: 8px;
+        overflow: hidden;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 6px;
+    }
+    .akeneo-slot img {
+        max-width: 100%;
+        max-height: 100%;
+        object-fit: contain;
+    }
+    .akeneo-slot-filled { background: rgba(255,255,255,0.04); }
+    .akeneo-slot-empty {
+        background: transparent;
+        border: 1px dashed rgba(255,255,255,0.15);
+        color: rgba(255,255,255,0.25);
+        font-size: 12px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
 TIMEOUT = 30
 IMAGE_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.bmp', '.tiff')
+MIME_BY_EXT = {
+    '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
+    '.gif': 'image/gif', '.webp': 'image/webp', '.bmp': 'image/bmp',
+    '.tiff': 'image/tiff', '.svg': 'image/svg+xml',
+}
+
+
+def guess_mime(filename):
+    lower = filename.lower()
+    for ext, mime in MIME_BY_EXT.items():
+        if lower.endswith(ext):
+            return mime
+    return "image/jpeg"
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -112,11 +148,13 @@ def normalize_media_code(code):
     return f"{prefix}/{code}"
 
 
+GALLERY_ATTRS = ["image_2", "image_3", "image_4", "image_5"]
+
+
 def extract_image_codes(product):
-    """Ekstrahuje kody grafik z produktu: 'image' (główna), 'images' (galeria), potem inne atrybuty."""
+    """Ekstrahuje kody grafik z produktu: 'base_image' (główna), potem 'image_2'..'image_5' (dodatkowe, w tej kolejności)."""
     values = product.get("values", {}) or {}
     images = []
-    seen = set()
 
     def first_data(attr):
         arr = values.get(attr)
@@ -124,34 +162,14 @@ def extract_image_codes(product):
             return None
         return arr[0].get("data")
 
-    main_image = first_data("image")
+    main_image = first_data("base_image")
     if isinstance(main_image, str) and main_image:
-        images.append({"code": main_image, "label": "Zdjęcie główne", "attribute": "image"})
-        seen.add(main_image)
+        images.append({"code": main_image, "label": "Zdjęcie główne", "attribute": "base_image"})
 
-    gallery = values.get("images")
-    if gallery:
-        for entry in gallery:
-            data = entry.get("data")
-            items = data if isinstance(data, list) else ([data] if isinstance(data, str) else [])
-            for idx, item in enumerate(items, 1):
-                code = item if isinstance(item, str) else (item.get("data") if isinstance(item, dict) else None)
-                if code and code not in seen:
-                    seen.add(code)
-                    images.append({"code": code, "label": f"Grafika {idx}", "attribute": "images"})
-
-    # Inne atrybuty zawierające coś, co wygląda jak kod/nazwa pliku graficznego
-    for attr, arr in values.items():
-        if attr in ("image", "images") or not isinstance(arr, list):
-            continue
-        for entry in arr:
-            data = entry.get("data")
-            candidates = data if isinstance(data, list) else ([data] if isinstance(data, str) else [])
-            for item in candidates:
-                code = item if isinstance(item, str) else (item.get("data") if isinstance(item, dict) else None)
-                if code and code.lower().endswith(IMAGE_EXTENSIONS) and code not in seen:
-                    seen.add(code)
-                    images.append({"code": code, "label": attr, "attribute": attr})
+    for idx, attr in enumerate(GALLERY_ATTRS, start=1):
+        code = first_data(attr)
+        if isinstance(code, str) and code:
+            images.append({"code": code, "label": f"Grafika {idx}", "attribute": attr})
 
     return images
 
@@ -291,9 +309,9 @@ with st.sidebar:
 
     max_gallery = st.slider(
         "Maks. dodatkowych grafik z galerii",
-        min_value=0, max_value=10, value=4,
+        min_value=0, max_value=4, value=4,
         disabled=only_main_image,
-        help="Ile grafik z galerii (poza główną) pobrać na produkt."
+        help="Ile grafik z galerii (poza główną) pobrać na produkt. Podgląd ma stałą siatkę 5 slotów (główna + 4 dodatkowe)."
     )
 
     delay_between = st.slider(
@@ -457,46 +475,72 @@ if st.session_state.akeneo_results:
 
     if res['downloaded_files']:
         st.markdown("---")
-        zip_buffer = create_zip(res['downloaded_files'])
-        st.download_button(
-            label=f"⬇️ POBIERZ PACZKĘ ZIP ({len(res['downloaded_files'])} plików)",
-            data=zip_buffer,
-            file_name=f"okladki_akeneo_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip",
-            mime="application/zip",
-            type="primary",
-            use_container_width=True
+        st.markdown("## 🖼️ Podgląd i wybór grafik do pobrania")
+        st.caption(
+            "Domyślnie zaznaczona jest tylko grafika główna (slot 1). "
+            "Zaznacz dodatkowe, które chcesz dołączyć do paczki ZIP."
         )
 
-        st.markdown("---")
-        st.markdown("## 🖼️ Podgląd pobranych grafik")
+        selected_files = {}  # filename -> bytes (tylko zaznaczone checkboxem)
 
         for ean in res['ean_order']:
             entry = res['product_previews'].get(ean)
             if not entry:
                 continue
-            files = entry['files']
+            files = entry['files']  # max 5: [główna, dod.1, dod.2, dod.3, dod.4]
+
             title = f"#### {ean}"
             if entry.get('name'):
                 title += f" — {entry['name']}"
-            title += f" ({len(files)} {'grafika' if len(files) == 1 else 'grafik'})"
             st.markdown(title)
 
-            cols = st.columns(min(len(files), 5))
-            for col, (filename, file_data) in zip(cols, files):
-                with col:
-                    try:
-                        img = Image.open(io.BytesIO(file_data))
-                        st.image(img, use_container_width=True, caption=filename)
-                    except Exception:
+            cols = st.columns(5)
+            for i in range(5):
+                with cols[i]:
+                    if i < len(files):
+                        filename, file_data = files[i]
+                        mime = guess_mime(filename)
+                        b64 = base64.b64encode(file_data).decode()
+
+                        st.markdown(
+                            f'<div class="akeneo-slot akeneo-slot-filled">'
+                            f'<img src="data:{mime};base64,{b64}" alt="{filename}" />'
+                            f'</div>',
+                            unsafe_allow_html=True
+                        )
+
+                        label = "Główna" if i == 0 else f"Dod. {i}"
+                        checked = st.checkbox(
+                            label,
+                            value=(i == 0),
+                            key=f"sel_{ean}_{i}"
+                        )
                         st.caption(filename)
-                    st.download_button(
-                        "⬇️",
-                        data=file_data,
-                        file_name=filename,
-                        key=f"dl_{filename}",
-                        use_container_width=True
-                    )
+
+                        if checked:
+                            selected_files[filename] = file_data
+                    else:
+                        st.markdown(
+                            '<div class="akeneo-slot akeneo-slot-empty">brak</div>',
+                            unsafe_allow_html=True
+                        )
+                        st.caption("—")
+
             st.markdown("")
+
+        st.markdown("---")
+        if selected_files:
+            zip_buffer = create_zip(selected_files)
+            st.download_button(
+                label=f"⬇️ POBIERZ ZAZNACZONE JAKO ZIP ({len(selected_files)} plików)",
+                data=zip_buffer,
+                file_name=f"okladki_akeneo_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip",
+                mime="application/zip",
+                type="primary",
+                use_container_width=True
+            )
+        else:
+            st.info("Zaznacz przynajmniej jedną grafikę, aby pobrać ZIP.")
 
 else:
     st.info("💡 Wklej listę EAN-ów i kliknij „POBIERZ GRAFIKI”, aby rozpocząć.")
