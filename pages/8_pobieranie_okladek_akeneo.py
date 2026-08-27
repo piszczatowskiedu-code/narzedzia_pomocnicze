@@ -19,9 +19,9 @@ try:
         layout="wide"
     )
 except Exception:
-    pass  # Jeśli st.set_page_config zostało wywołane w app.py
+    pass  # Jeśli st.set_page_config zostało wywołane wcześniej w app.py
 
-# ⚡ Dodatkowy CSS znoszący ograniczenia szerokości Streamlit
+# ⚡ Dodatkowy CSS znoszący ograniczenia szerokości i dostosowujący wygląd
 st.markdown("""
 <style>
     /* Wymuszenie szerokości na 95% ekranu */
@@ -48,6 +48,32 @@ st.markdown("""
     }
 </style>
 """, unsafe_allow_html=True)
+
+
+# ══════════════════════════════════════════════════════════════════
+#  POŁĄCZENIE I SESJA (Connection Pooling + Bezpieczny Auto-Retry)
+# ══════════════════════════════════════════════════════════════════
+
+def get_session() -> requests.Session:
+    """Współdzielona sesja z connection poolingiem i bezpiecznym ponawianiem prób."""
+    if "_http_session" not in st.session_state:
+        s = requests.Session()
+        retries = Retry(
+            total=3,
+            backoff_factor=0.5,
+            status_forcelist=[429, 500, 502, 503, 504],
+            raise_on_status=False
+        )
+        adapter = HTTPAdapter(
+            pool_connections=10,
+            pool_maxsize=10,
+            max_retries=retries,
+        )
+        s.mount("https://", adapter)
+        s.mount("http://", adapter)
+        st.session_state._http_session = s
+    return st.session_state._http_session
+
 
 TIMEOUT = 30
 IMAGE_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.bmp', '.tiff')
