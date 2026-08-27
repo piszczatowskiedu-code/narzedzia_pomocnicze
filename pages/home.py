@@ -130,8 +130,8 @@ with col6:
     if st.button("Otwórz konwerter PDF", key="btn_pdf", type="primary", icon="🚀", use_container_width=True):
         st.switch_page("pages/6_konwerter_pdf_jpg.py")
 
-# Trzeci rząd - 1 kolumna (wyśrodkowana)
-col7, _, _ = st.columns(3)
+# Trzeci rząd - 2 kolumny
+col7, col8, _ = st.columns(3)
 
 with col7:
     st.markdown("""
@@ -150,12 +150,29 @@ with col7:
     if st.button("Otwórz generator kopii", key="btn_copies", type="primary", icon="🚀", use_container_width=True):
         st.switch_page("pages/7_generator_kopii.py")
 
+with col8:
+    st.markdown("""
+    <div class='tool-card'>
+    <h3>🔗 Okładki z Akeneo</h3>
+    <p>Pobieranie grafik produktów bezpośrednio z Akeneo PIM przez API, na podstawie listy EAN-ów.</p>
+    <ul>
+        <li>✅ Logowanie przez OAuth2 (dane w secrets)</li>
+        <li>✅ Pobiera zdjęcie główne i galerię</li>
+        <li>✅ Podgląd grafik i pobieranie pojedynczych plików</li>
+        <li>✅ Eksport do ZIP</li>
+    </ul>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    if st.button("Otwórz pobieranie z Akeneo", key="btn_akeneo", type="primary", icon="🚀", use_container_width=True):
+        st.switch_page("pages/8_pobieranie_okladek_akeneo.py")
+
 # Informacje dodatkowe
 with st.expander("ℹ️ Informacje o aplikacji"):
     st.markdown("""
     ### 🛠️ Pakiet narzędzi do pracy z danymi produktowymi
     
-    Ta aplikacja zawiera 7 narzędzi usprawniających pracę z danymi produktów w plikach Excel:
+    Ta aplikacja zawiera 8 narzędzi usprawniających pracę z danymi produktów w plikach Excel:
     
     1. **Pobieranie okładek** - automatyczne pobieranie obrazów produktów
     2. **Konwerter HTML** - konwersja opisów tekstowych na HTML
@@ -164,6 +181,7 @@ with st.expander("ℹ️ Informacje o aplikacji"):
     5. **Weryfikator serii** - znajdowanie problemów z seriami książek
     6. **Konwerter PDF → JPG** - konwersja stron PDF na obrazy JPG
     7. **Generator kopii grafik** - tworzenie nazwanych kopii jednej grafiki
+    8. **Okładki z Akeneo** - pobieranie grafik produktów przez API Akeneo PIM
     """)
 
 # Stopka
