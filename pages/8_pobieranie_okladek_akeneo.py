@@ -148,19 +148,20 @@ def normalize_media_code(code):
     return f"{prefix}/{code}"
 
 
-def extract_image_codes(product):
-    """Ekstrahuje kody grafik z produktu.
+GALLERY_ATTRS = ["image2", "image3", "image4", "image5"]
 
-    Kolejność (zweryfikowana z rzeczywistymi danymi w Akeneo):
-    - główna grafika = pierwszy element galerii 'images'
-    - pojedynczy atrybut 'image' oraz pozostałe elementy 'images' = grafiki dodatkowe
-    - inne atrybuty z rozszerzeniem graficznym = fallback na końcu
+
+def extract_image_codes(product):
+    """Ekstrahuje kody grafik z produktu: 'base_image' (główna), potem 'image2'..'image5' (dodatkowe, w tej kolejności).
+
+    Każdy wpis w API zawiera gotowy link _links.download.href — używamy go bezpośrednio
+    zamiast ręcznie rekonstruować ścieżkę media-file.
     """
     values = product.get("values", {}) or {}
     images = []
     seen = set()
 
-    def first_data(attr):
+    def first_entry_with_data(attr):
         arr = values.get(attr)
         if not arr:
             return None
@@ -168,55 +169,41 @@ def extract_image_codes(product):
         # (po jednym na kanał/język). Szukamy pierwszego z realną wartością,
         # zamiast bezwarunkowo brać arr[0], który może być pusty dla danego scope.
         for entry in arr:
-            data = entry.get("data")
-            if data:
-                return data
+            if entry.get("data"):
+                return entry
         return None
 
-    def add_image(code, attribute):
+    def add_image(entry, attribute):
+        if not entry:
+            return
+        code = entry.get("data")
         if not code or code in seen:
             return
         seen.add(code)
+        download_url = ((entry.get("_links") or {}).get("download") or {}).get("href")
         label = "Zdjęcie główne" if not images else f"Grafika {len(images)}"
-        images.append({"code": code, "label": label, "attribute": attribute})
+        images.append({"code": code, "label": label, "attribute": attribute, "download_url": download_url})
 
-    # Galeria 'images' — pierwszy element staje się grafiką główną, reszta dodatkowymi
-    gallery = values.get("images")
-    if gallery:
-        for entry in gallery:
-            data = entry.get("data")
-            items = data if isinstance(data, list) else ([data] if isinstance(data, str) else [])
-            for item in items:
-                code = item if isinstance(item, str) else (item.get("data") if isinstance(item, dict) else None)
-                add_image(code, "images")
-
-    # Pojedynczy atrybut 'image' — dodatkowa (chyba że galeria była pusta, wtedy zostaje główną)
-    add_image(first_data("image"), "image")
-
-    # Fallback: inne atrybuty zawierające coś, co wygląda jak kod/nazwa pliku graficznego
-    for attr, arr in values.items():
-        if attr in ("image", "images") or not isinstance(arr, list):
-            continue
-        for entry in arr:
-            data = entry.get("data")
-            candidates = data if isinstance(data, list) else ([data] if isinstance(data, str) else [])
-            for item in candidates:
-                code = item if isinstance(item, str) else (item.get("data") if isinstance(item, dict) else None)
-                if code and code.lower().endswith(IMAGE_EXTENSIONS):
-                    add_image(code, attr)
+    add_image(first_entry_with_data("base_image"), "base_image")
+    for attr in GALLERY_ATTRS:
+        add_image(first_entry_with_data(attr), attr)
 
     return images
 
 
-def fetch_media_metadata(cfg, token, media_code):
+def fetch_media_metadata(cfg, token, media_code, metadata_url=None):
     """Pobiera metadane pliku (original_filename, mime_type, size) — best effort, None jeśli niedostępne."""
-    base_url = cfg["base_url"].rstrip("/")
-    normalized = normalize_media_code(media_code)
-    encoded = "/".join(quote(part, safe="") for part in normalized.split("/"))
+    if metadata_url:
+        url = metadata_url
+    else:
+        base_url = cfg["base_url"].rstrip("/")
+        normalized = normalize_media_code(media_code)
+        encoded = "/".join(quote(part, safe="") for part in normalized.split("/"))
+        url = f"{base_url}/api/rest/v1/media-files/{encoded}"
 
     try:
         resp = requests.get(
-            f"{base_url}/api/rest/v1/media-files/{encoded}",
+            url,
             headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
             timeout=TIMEOUT,
         )
@@ -246,15 +233,23 @@ def guess_extension(media_code, metadata):
     return ".jpg"
 
 
-def download_media_file(cfg, token, media_code, metadata=None):
-    """Pobiera oryginalny (pełnej jakości) plik grafiki z Akeneo."""
-    base_url = cfg["base_url"].rstrip("/")
-    normalized = normalize_media_code(media_code)
-    encoded = "/".join(quote(part, safe="") for part in normalized.split("/"))
+def download_media_file(cfg, token, media_code, metadata=None, download_url=None):
+    """Pobiera oryginalny (pełnej jakości) plik grafiki z Akeneo.
+
+    Jeśli mamy gotowy download_url z odpowiedzi API (_links.download.href), używamy go
+    bezpośrednio — jest pewniejszy niż ręczna rekonstrukcja ścieżki media-file.
+    """
+    if download_url:
+        url = download_url
+    else:
+        base_url = cfg["base_url"].rstrip("/")
+        normalized = normalize_media_code(media_code)
+        encoded = "/".join(quote(part, safe="") for part in normalized.split("/"))
+        url = f"{base_url}/api/rest/v1/media-files/{encoded}/download"
 
     try:
         resp = requests.get(
-            f"{base_url}/api/rest/v1/media-files/{encoded}/download",
+            url,
             headers={"Authorization": f"Bearer {token}"},
             timeout=TIMEOUT,
         )
@@ -386,7 +381,8 @@ with st.expander("🐞 Debug: podejrzyj surowe dane produktu z Akeneo"):
                         st.write("Wszystkie dostępne atrybuty (klucze):")
                         st.code("\n".join(sorted(values.keys())))
 
-                    with st.expander("Pełny JSON produktu"):
+                    show_full_json = st.checkbox("Pokaż pełny JSON produktu", key="debug_show_full_json")
+                    if show_full_json:
                         st.json(debug_product)
             except Exception as e:
                 st.error(f"Błąd: {e}")
@@ -467,10 +463,12 @@ if st.button("🚀 POBIERZ GRAFIKI", type="primary", use_container_width=True, d
         product_previews[ean] = {'name': product_name, 'files': []}
 
         for i, img_info in enumerate(image_codes):
-            metadata = fetch_media_metadata(cfg, token, img_info["code"]) if fetch_metadata else None
+            download_url = img_info.get("download_url")
+            metadata_url = f"{download_url.rsplit('/download', 1)[0]}" if download_url else None
+            metadata = fetch_media_metadata(cfg, token, img_info["code"], metadata_url) if fetch_metadata else None
 
             try:
-                image_bytes, ext = download_media_file(cfg, token, img_info["code"], metadata)
+                image_bytes, ext = download_media_file(cfg, token, img_info["code"], metadata, download_url)
             except requests.exceptions.RequestException as e:
                 msg = f"EAN {ean}: błąd pobierania grafiki '{img_info['code']}': {e}"
                 errors_log.append(msg)
