@@ -412,7 +412,6 @@ if st.button("🚀 POBIERZ GRAFIKI", type="primary", use_container_width=True, d
         else:
             stats['blad'] += 1
         errors_log.append(err_msg)
-        log_expander.warning(err_msg)
 
     progress_bar.progress(0.2)
 
@@ -433,7 +432,6 @@ if st.button("🚀 POBIERZ GRAFIKI", type="primary", use_container_width=True, d
         if not image_codes:
             msg = f"EAN {ean}: produkt znaleziony, brak grafik"
             errors_log.append(msg)
-            log_expander.info(msg)
             stats['brak_grafik'] += 1
             continue
 
@@ -460,18 +458,24 @@ if st.button("🚀 POBIERZ GRAFIKI", type="primary", use_container_width=True, d
 
             done_count = 0
             total = len(futures)
+            last_ui_update = 0.0
+            UI_UPDATE_INTERVAL = 0.2  # sekundy — ogranicza liczbę wiadomości wysyłanych do przeglądarki
+
             for future in concurrent.futures.as_completed(futures):
                 done_count += 1
                 ean, idx, filename, data_or_err = future.result()
 
-                pct = 0.3 + 0.7 * (done_count / total)
-                progress_bar.progress(min(pct, 1.0))
-                status_text.text(f"🖼️ Pobrano {done_count}/{total} grafik...")
+                now = time.time()
+                is_last = (done_count == total)
+                if is_last or (now - last_ui_update) >= UI_UPDATE_INTERVAL:
+                    pct = 0.3 + 0.7 * (done_count / total)
+                    progress_bar.progress(min(pct, 1.0))
+                    status_text.text(f"🖼️ Pobrano {done_count}/{total} grafik...")
+                    last_ui_update = now
 
                 if filename is None:
                     msg = f"EAN {ean}: {data_or_err}"
                     errors_log.append(msg)
-                    log_expander.error(msg)
                     stats['blad'] += 1
                     continue
 
@@ -479,6 +483,10 @@ if st.button("🚀 POBIERZ GRAFIKI", type="primary", use_container_width=True, d
                 if ean in product_previews:
                     product_previews[ean]['files'].append((filename, data_or_err))
                 stats['sukces'] += 1
+
+    if errors_log:
+        for msg in errors_log:
+            log_expander.warning(msg)
 
     for ean in product_previews:
         product_previews[ean]['files'].sort(
