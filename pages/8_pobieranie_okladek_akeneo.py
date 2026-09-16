@@ -367,6 +367,7 @@ with st.sidebar:
         st.markdown("---")
         if st.button("🗑️ Wyczyść wyniki", type="secondary", use_container_width=True):
             st.session_state.akeneo_results = None
+            st.session_state.preview_page = 1
             st.rerun()
 
 
@@ -508,6 +509,7 @@ if st.button("🚀 POBIERZ GRAFIKI", type="primary", use_container_width=True, d
         'product_previews': product_previews,
         'ean_order': [e for e in ean_list if e in product_previews],
     }
+    st.session_state.preview_page = 1
     st.rerun()
 
 
@@ -571,9 +573,39 @@ if st.session_state.akeneo_results:
             "Zaznacz dodatkowe, które chcesz dołączyć do paczki ZIP."
         )
 
-        selected_files = {}
+        eans_with_preview = [e for e in res['ean_order'] if res['product_previews'].get(e)]
+        PAGE_SIZE = 20
+        total_pages = max(1, (len(eans_with_preview) + PAGE_SIZE - 1) // PAGE_SIZE)
 
-        for ean in res['ean_order']:
+        if 'preview_page' not in st.session_state:
+            st.session_state.preview_page = 1
+        st.session_state.preview_page = min(st.session_state.preview_page, total_pages)
+
+        if total_pages > 1:
+            pcol1, pcol2, pcol3 = st.columns([1, 2, 1])
+            with pcol1:
+                if st.button("⬅️ Poprzednia", disabled=(st.session_state.preview_page <= 1), use_container_width=True):
+                    st.session_state.preview_page -= 1
+                    st.rerun()
+            with pcol2:
+                st.session_state.preview_page = st.number_input(
+                    f"Strona (produkty {((st.session_state.preview_page - 1) * PAGE_SIZE) + 1}"
+                    f"–{min(st.session_state.preview_page * PAGE_SIZE, len(eans_with_preview))} "
+                    f"z {len(eans_with_preview)})",
+                    min_value=1, max_value=total_pages,
+                    value=st.session_state.preview_page, step=1,
+                    label_visibility="visible",
+                )
+            with pcol3:
+                if st.button("Następna ➡️", disabled=(st.session_state.preview_page >= total_pages), use_container_width=True):
+                    st.session_state.preview_page += 1
+                    st.rerun()
+
+        page = st.session_state.preview_page
+        start = (page - 1) * PAGE_SIZE
+        page_eans = eans_with_preview[start:start + PAGE_SIZE]
+
+        for ean in page_eans:
             entry = res['product_previews'].get(ean)
             if not entry:
                 continue
@@ -607,17 +639,13 @@ if st.session_state.akeneo_results:
                         )
 
                         label = "Główna" if i == 0 else f"Dod. {i}"
-                        checked = st.checkbox(
-                            label, value=(i == 0), key=f"sel_{ean}_{i}"
-                        )
+                        st.checkbox(label, value=(i == 0), key=f"sel_{ean}_{i}")
                         st.caption(filename)
                         st.download_button(
                             "⬇️ Pobierz", data=file_data,
                             file_name=filename, mime=mime,
                             key=f"dl_{ean}_{i}", use_container_width=True
                         )
-                        if checked:
-                            selected_files[filename] = file_data
                     else:
                         st.markdown(
                             '<div class="akeneo-slot akeneo-slot-empty">brak</div>',
@@ -626,11 +654,20 @@ if st.session_state.akeneo_results:
                         st.caption("—")
             st.markdown("")
 
+        # Zaznaczenia liczymy po WSZYSTKICH EAN-ach (nie tylko z bieżącej strony) —
+        # stan checkboxów w session_state utrzymuje się nawet gdy dana strona nie jest renderowana.
+        selected_files = {}
+        for ean in eans_with_preview:
+            entry = res['product_previews'].get(ean)
+            for i, (filename, file_data) in enumerate(entry['files']):
+                if st.session_state.get(f"sel_{ean}_{i}", (i == 0)):
+                    selected_files[filename] = file_data
+
         st.markdown("---")
         if selected_files:
             zip_buffer = create_zip(selected_files)
             st.download_button(
-                label=f"⬇️ POBIERZ ZAZNACZONE JAKO ZIP ({len(selected_files)} plików)",
+                label=f"⬇️ POBIERZ ZAZNACZONE JAKO ZIP ({len(selected_files)} plików, wszystkie strony)",
                 data=zip_buffer,
                 file_name=f"okladki_akeneo_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip",
                 mime="application/zip",
