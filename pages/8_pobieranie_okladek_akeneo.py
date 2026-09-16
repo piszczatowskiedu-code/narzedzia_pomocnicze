@@ -534,6 +534,10 @@ if st.session_state.akeneo_results:
                 w, h = item['resolution']
                 name_part = f" — {item['name']}" if item['name'] else ""
                 st.markdown(f"- **{item['ean']}**{name_part} — `{item['filename']}` ({w}×{h}px)")
+
+            low_res_eans_unique = list(dict.fromkeys(item['ean'] for item in low_res_items))
+            st.markdown("**Lista EAN-ów (do skopiowania):**")
+            st.code("\n".join(low_res_eans_unique), language=None)
         else:
             st.caption("Brak grafik poniżej 500px w krótszym boku.")
 
