@@ -511,6 +511,32 @@ if st.session_state.akeneo_results:
     res = st.session_state.akeneo_results
     s = res['stats']
 
+    # ── Wykrywanie grafik niskiej rozdzielczości (bok < 500px) ────
+    low_res_items = []
+    for ean in res['ean_order']:
+        entry = res['product_previews'].get(ean)
+        if not entry:
+            continue
+        for filename, file_data in entry['files']:
+            resolution = get_image_resolution(file_data)
+            if resolution and min(resolution) < 500:
+                low_res_items.append({
+                    'ean': ean,
+                    'name': entry.get('name'),
+                    'filename': filename,
+                    'resolution': resolution,
+                })
+
+    st.markdown("---")
+    with st.expander(f"📏 EAN-y z grafiką poniżej 500px ({len(low_res_items)})", expanded=False):
+        if low_res_items:
+            for item in low_res_items:
+                w, h = item['resolution']
+                name_part = f" — {item['name']}" if item['name'] else ""
+                st.markdown(f"- **{item['ean']}**{name_part} — `{item['filename']}` ({w}×{h}px)")
+        else:
+            st.caption("Brak grafik poniżej 500px w krótszym boku.")
+
     st.markdown("---")
     st.markdown("## 📊 Wyniki")
 
