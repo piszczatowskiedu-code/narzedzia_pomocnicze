@@ -10,6 +10,7 @@ import base64
 import concurrent.futures
 from datetime import datetime
 from urllib.parse import quote
+from PIL import Image
 
 # ⚡ Ustawienie układu aplikacji na szeroki (WIDE)
 try:
@@ -38,13 +39,20 @@ st.markdown("""
     .akeneo-slot {
         width: 100%; aspect-ratio: 1 / 1; border-radius: 8px;
         overflow: hidden; display: flex; align-items: center;
-        justify-content: center; margin-bottom: 6px;
+        justify-content: center; margin-bottom: 6px; position: relative;
     }
     .akeneo-slot img { max-width: 100%; max-height: 100%; object-fit: contain; }
     .akeneo-slot-filled { background: rgba(255,255,255,0.04); }
     .akeneo-slot-empty {
         background: transparent; border: 1px dashed rgba(255,255,255,0.15);
         color: rgba(255,255,255,0.25); font-size: 12px;
+    }
+    .akeneo-res-pill {
+        position: absolute; bottom: 6px; right: 6px;
+        background: rgba(0,0,0,0.65); color: #fff;
+        font-size: 10px; font-weight: 600; letter-spacing: 0.3px;
+        padding: 2px 8px; border-radius: 10px;
+        pointer-events: none;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -89,6 +97,15 @@ def guess_mime(filename):
         if lower.endswith(ext):
             return mime
     return "image/jpeg"
+
+
+def get_image_resolution(file_data):
+    """Zwraca (szerokość, wysokość) obrazka lub None, jeśli nie da się odczytać (np. SVG)."""
+    try:
+        with Image.open(io.BytesIO(file_data)) as img:
+            return img.size
+    except Exception:
+        return None
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -179,29 +196,6 @@ def fetch_products_batch(cfg, token, eans):
             errors.append(f"EAN {ean}: Nie znaleziono produktu w Akeneo (404)")
 
     return results, errors
-
-
-def fetch_product_single(cfg, token, ean):
-    """Fallback — pojedynczy produkt do debugu."""
-    session = get_session()
-    base_url = cfg["base_url"].rstrip("/")
-    try:
-        resp = session.get(
-            f"{base_url}/api/rest/v1/products/{quote(ean, safe='')}",
-            headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
-            timeout=TIMEOUT,
-        )
-    except requests.exceptions.RequestException as e:
-        return None, f"Błąd połączenia: {e}"
-
-    if resp.status_code == 404:
-        return None, "Nie znaleziono produktu (404)"
-    if resp.status_code == 401:
-        st.session_state.pop('akeneo_token', None)
-        return None, "Błąd autoryzacji (401)"
-    if resp.status_code != 200:
-        return None, f"Błąd API: status {resp.status_code}"
-    return resp.json(), None
 
 
 GALLERY_ATTRS = ["image2", "image3", "image4", "image5"]
@@ -375,35 +369,6 @@ with st.sidebar:
             st.session_state.akeneo_results = None
             st.rerun()
 
-
-with st.expander("🐞 Debug: podejrzyj surowe dane produktu z Akeneo"):
-    st.caption("Wpisz jeden EAN i pobierz jego pełne dane z API.")
-    debug_ean = st.text_input("EAN do sprawdzenia", key="debug_ean_input")
-    if st.button("🔍 Pobierz surowe dane", key="debug_fetch_btn"):
-        if not debug_ean.strip():
-            st.warning("Podaj EAN.")
-        else:
-            try:
-                debug_token = get_token(cfg)
-                debug_product, debug_err = fetch_product_single(cfg, debug_token, debug_ean.strip())
-                if debug_err:
-                    st.error(debug_err)
-                elif debug_product:
-                    values = debug_product.get("values", {}) or {}
-                    image_like_keys = {
-                        k: v for k, v in values.items()
-                        if any(kw in k.lower() for kw in ("image", "zdj", "grafik", "foto", "cover", "oklad"))
-                    }
-                    if image_like_keys:
-                        st.success(f"Znaleziono {len(image_like_keys)} atrybutów grafiki:")
-                        st.json(image_like_keys)
-                    else:
-                        st.warning("Brak atrybutów grafiki. Wszystkie klucze:")
-                        st.code("\n".join(sorted(values.keys())))
-                    if st.checkbox("Pokaż pełny JSON", key="debug_show_full_json"):
-                        st.json(debug_product)
-            except Exception as e:
-                st.error(f"Błąd: {e}")
 
 st.markdown("### 🔢 Lista EAN-ów")
 ean_text = st.text_area(
@@ -589,9 +554,16 @@ if st.session_state.akeneo_results:
                         mime = guess_mime(filename)
                         b64 = base64.b64encode(file_data).decode()
 
+                        resolution = get_image_resolution(file_data)
+                        pill_html = (
+                            f'<span class="akeneo-res-pill">{resolution[0]}×{resolution[1]}</span>'
+                            if resolution else ''
+                        )
+
                         st.markdown(
                             f'<div class="akeneo-slot akeneo-slot-filled">'
                             f'<img src="data:{mime};base64,{b64}" alt="{filename}" />'
+                            f'{pill_html}'
                             f'</div>',
                             unsafe_allow_html=True
                         )
